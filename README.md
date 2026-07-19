@@ -1,32 +1,29 @@
-# React + TypeScript + Vite
+# Movie Night
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+React + TypeScript app for planning movie night with shared cloud state on Cloudflare Pages.
 
-Currently, two official plugins are available:
+## Local development
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```powershell
+npm.cmd install
+npm.cmd run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Production build
+
+```powershell
+npm.cmd run build
+```
+
+## Cloudflare shared saving
+
+This app uses a Cloudflare Pages Function at `functions/api/state.js` and a D1 database table named `movie_night_state`.
+
+To enable shared editing for everyone who opens the link:
+
+1. Create a D1 database in Cloudflare.
+2. Apply the migration in `migrations/0001_init.sql`.
+3. Add the D1 binding to your Pages project with the binding name `DB`.
+4. Redeploy the site.
+
+The dashboard will then load and save the shared state from the cloud instead of each visitor's browser.

@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS movie_night_state (
+  id TEXT PRIMARY KEY NOT NULL,
+  state_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

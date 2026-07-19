@@ -12,7 +12,7 @@ import {
   Star,
   Trash2,
 } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 type AttendanceStatus = 'yes' | 'maybe' | 'no' | ''
 type Tab = 'dashboard' | 'voting'
@@ -60,8 +60,6 @@ type MovieMeta = {
   runtime: string
   genre: string
 }
-
-const STORAGE_KEY = 'movie-night-planner-v1'
 
 const generateArrivalOptions = () => {
   const out: string[] = []
@@ -164,18 +162,8 @@ const createDefaultState = (): AppState => ({
 
 const defaultState: AppState = createDefaultState()
 
-const readState = () => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) return defaultState
-    return JSON.parse(raw) as AppState
-  } catch {
-    return defaultState
-  }
-}
-
 function App() {
-  const [state, setState] = useState<AppState>(readState)
+  const [state, setState] = useState<AppState>(defaultState)
   const [activeTab, setActiveTab] = useState<Tab>('dashboard')
   const [isEditingDetails, setIsEditingDetails] = useState(false)
   const [movieSearch, setMovieSearch] = useState('')
@@ -183,16 +171,85 @@ function App() {
   const [sortMode, setSortMode] = useState<'popularity' | 'title'>('popularity')
   const [draftMovies, setDraftMovies] = useState<Record<string, string>>({})
   const [draggedMovie, setDraggedMovie] = useState<{ friendId: string; movieId: string } | null>(null)
-  
   const [now, setNow] = useState(Date.now())
   const [pickerResult, setPickerResult] = useState('')
   const [isPickingMovie, setIsPickingMovie] = useState(false)
-
-  useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
-  }, [state])
+  const [isLoaded, setIsLoaded] = useState(false)
+  const [syncStatus, setSyncStatus] = useState<'loading' | 'saved' | 'saving' | 'error'>('loading')
+  const lastSavedStateRef = useRef('')
 
   // app is dark-only by design per user request
+
+  useEffect(() => {
+    let cancelled = false
+
+    const loadState = async () => {
+      try {
+        const response = await fetch('/api/state')
+        if (!response.ok) {
+          throw new Error(`Failed to load shared state: ${response.status}`)
+        }
+
+        const remoteState = (await response.json()) as AppState
+        const serialized = JSON.stringify(remoteState)
+
+        if (cancelled) return
+
+        lastSavedStateRef.current = serialized
+        setState(remoteState)
+        setSyncStatus('saved')
+      } catch {
+        if (cancelled) return
+
+        const serialized = JSON.stringify(defaultState)
+        lastSavedStateRef.current = serialized
+        setState(defaultState)
+        setSyncStatus('error')
+      } finally {
+        if (!cancelled) setIsLoaded(true)
+      }
+    }
+
+    void loadState()
+
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!isLoaded) return
+
+    const serialized = JSON.stringify(state)
+    if (serialized === lastSavedStateRef.current) return
+
+    setSyncStatus('saving')
+
+    const timeout = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const response = await fetch('/api/state', {
+            method: 'PUT',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: serialized,
+          })
+
+          if (!response.ok) {
+            throw new Error(`Failed to save shared state: ${response.status}`)
+          }
+
+          lastSavedStateRef.current = serialized
+          setSyncStatus('saved')
+        } catch {
+          setSyncStatus('error')
+        }
+      })()
+    }, 350)
+
+    return () => window.clearTimeout(timeout)
+  }, [isLoaded, state])
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
@@ -390,7 +447,10 @@ function App() {
         >
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
             <h1 className="font-display text-3xl tracking-tight sm:text-4xl">Movie Night Command Center</h1>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${syncStatus === 'saved' ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-100' : syncStatus === 'saving' ? 'border-amber-400/40 bg-amber-500/15 text-amber-100' : syncStatus === 'error' ? 'border-rose-400/40 bg-rose-500/15 text-rose-100' : 'border-white/15 bg-white/5 text-white/70'}`}>
+                {syncStatus === 'loading' ? 'Loading cloud state...' : syncStatus === 'saving' ? 'Saving to cloud...' : syncStatus === 'error' ? 'Cloud sync error' : 'Saved to cloud'}
+              </span>
               <button
                 type="button"
                 onClick={() => setIsEditingDetails((prev) => !prev)}
