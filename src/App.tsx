@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
-type AttendanceStatus = 'yes' | 'maybe' | 'no'
+type AttendanceStatus = 'yes' | 'maybe' | 'no' | ''
 type Tab = 'dashboard' | 'voting'
 
 type MovieSuggestion = {
@@ -98,18 +98,22 @@ const MOVIE_META: Record<string, MovieMeta> = {
   'Avengers: Endgame': { year: 2019, runtime: '3h 1m', genre: 'Action' },
 }
 
-const STATUS_STYLES: Record<AttendanceStatus, string> = {
-  yes: 'bg-emerald-500/25 text-emerald-200 ring-2 ring-emerald-400/60',
-  maybe: 'bg-amber-500/25 text-amber-100 ring-2 ring-amber-400/60',
-  no: 'bg-rose-500/25 text-rose-100 ring-2 ring-rose-400/60',
-}
-
 const createId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2)
 
 const normalizeTitle = (value: string) => value.trim().toLowerCase()
+
+const formatTimeInputLabel = (value: string) => {
+  const [hourRaw, minuteRaw] = value.split(':')
+  let hour = Number(hourRaw)
+  const minute = Number(minuteRaw)
+  const period = hour >= 12 ? 'PM' : 'AM'
+  hour %= 12
+  if (hour === 0) hour = 12
+  return `${hour}:${String(minute).padStart(2, '0')} ${period}`
+}
 
 const toMinutes = (value: string) => {
   const [time, period] = value.split(' ')
@@ -130,25 +134,35 @@ const fromMinutes = (value: number) => {
   return `${hour}:${String(minute).padStart(2, '0')} ${period}`
 }
 
-const defaultState: AppState = {
-  details: {
+const DEFAULT_DETAILS: MovieNightDetails = {
     title: 'Movie Night #12',
     date: '2026-08-08',
     plannedStartTime: '19:00',
     location: "Parmeet's House",
     host: 'Parmeet',
     notes: 'Bring your best snacks and arrive 15 minutes early for trailers.',
-  },
-  friends: FRIENDS.map((name) => ({
+}
+
+const createDefaultFriends = (plannedStartTime: string): Friend[] => {
+  const defaultArrivalTime = formatTimeInputLabel(plannedStartTime)
+
+  return FRIENDS.map((name) => ({
     id: createId(),
     name,
-    status: 'maybe',
-    arrivalTime: '',
+    status: '',
+    arrivalTime: defaultArrivalTime,
     comments: '',
     movies: [],
-  })),
-  movieVotes: {},
+  }))
 }
+
+const createDefaultState = (): AppState => ({
+  details: { ...DEFAULT_DETAILS },
+  friends: createDefaultFriends(DEFAULT_DETAILS.plannedStartTime),
+  movieVotes: {},
+})
+
+const defaultState: AppState = createDefaultState()
 
 const readState = () => {
   try {
@@ -191,6 +205,22 @@ function App() {
       friends: prev.friends.map((friend) => (friend.id === friendId ? updater(friend) : friend)),
     }))
   }
+
+  const resetAll = () => {
+    const nextState = createDefaultState()
+    setState(nextState)
+    setActiveTab('dashboard')
+    setIsEditingDetails(false)
+    setMovieSearch('')
+    setGenreFilter('All')
+    setSortMode('popularity')
+    setDraftMovies({})
+    setDraggedMovie(null)
+    setPickerResult('')
+    setIsPickingMovie(false)
+  }
+
+  const defaultArrivalLabel = formatTimeInputLabel(state.details.plannedStartTime)
 
   const movieMasterList = useMemo(() => {
     const movieMap = new Map<
@@ -447,7 +477,11 @@ function App() {
               <section>
                 <h2 className="section-title">Attendance</h2>
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {state.friends.map((friend, index) => (
+                  {state.friends.map((friend, index) => {
+                    const hasCustomArrival = Boolean(friend.arrivalTime) && friend.arrivalTime !== defaultArrivalLabel
+                    const hasComment = friend.comments.trim().length > 0
+
+                    return (
                     <motion.article
                       key={friend.id}
                       initial={{ opacity: 0, y: 10 }}
@@ -459,6 +493,7 @@ function App() {
                       <p className="mb-3 text-xs uppercase tracking-wide text-white/60">Attendance Status</p>
                       <div className="mb-3 grid grid-cols-3 gap-2">
                         {([
+                          ['', 'None'],
                           ['yes', 'Yes'],
                           ['maybe', 'Maybe'],
                           ['no', 'No'],
@@ -467,37 +502,25 @@ function App() {
                             key={status}
                             type="button"
                             onClick={() => updateFriend(friend.id, (current) => ({ ...current, status }))}
-                            className={`rounded-lg px-2 py-2 text-sm font-semibold transition ${friend.status === status ? STATUS_STYLES[status] : 'bg-white/5 hover:bg-white/10'}`}
+                            className={`rounded-xl px-2 py-2 text-sm font-semibold transition-all duration-200 ${friend.status === status
+                              ? 'scale-[1.04] border border-red-300/70 bg-red-500 text-white shadow-[0_10px_28px_rgba(239,68,68,0.35)] ring-2 ring-red-200/60'
+                              : 'border border-white/10 bg-white/5 text-white/70 hover:bg-white/10'
+                              }`}
                           >
-                            {status === 'yes' ? '✅' : status === 'maybe' ? '❓' : '❌'} {label}
+                            {status === 'yes' ? '✅' : status === 'maybe' ? '❓' : status === 'no' ? '❌' : '–'} {label}
                           </button>
                         ))}
                       </div>
 
-                      <label className="text-xs uppercase tracking-wide text-white/60">Arrival Time</label>
-                      <select
-                        className="field mt-1"
-                        value={friend.arrivalTime}
-                        onChange={(event) => updateFriend(friend.id, (current) => ({ ...current, arrivalTime: event.target.value }))}
-                      >
-                        <option value="">Select time</option>
-                        {ARRIVAL_OPTIONS.map((option) => (
-                          <option key={option} value={option}>
-                            {option}
-                          </option>
-                        ))}
-                      </select>
-
-                      <label className="mt-3 block text-xs uppercase tracking-wide text-white/60">Comments</label>
-                      <textarea
-                        className="field mt-1 min-h-20 resize-y"
-                        value={friend.comments}
-                        onChange={(event) => updateFriend(friend.id, (current) => ({ ...current, comments: event.target.value }))}
-                        placeholder="Bringing snacks, running late, need a ride..."
-                      />
+                      {(hasCustomArrival || hasComment) ? (
+                        <div className="mt-2 space-y-2 rounded-2xl border border-white/10 bg-black/20 p-3 text-sm text-white/80">
+                          {hasCustomArrival ? <p><span className="text-white/55">Arrival:</span> {friend.arrivalTime}</p> : null}
+                          {hasComment ? <p><span className="text-white/55">Comment:</span> {friend.comments}</p> : null}
+                        </div>
+                      ) : null}
 
                       <details className="mt-4 rounded-xl border border-white/10 bg-black/25 p-3">
-                        <summary className="cursor-pointer font-medium">Movies I Want to Watch</summary>
+                        <summary className="cursor-pointer font-medium">Add arrival time, comments, or movies</summary>
                         <ul className="mt-3 space-y-2">
                           {friend.movies.map((movie) => (
                             <li
@@ -553,6 +576,28 @@ function App() {
                         </ul>
 
                         <div className="mt-3 flex gap-2">
+                          <select
+                            className="field"
+                            value={friend.arrivalTime}
+                            onChange={(event) => updateFriend(friend.id, (current) => ({ ...current, arrivalTime: event.target.value }))}
+                          >
+                            {ARRIVAL_OPTIONS.map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        <label className="mt-3 block text-xs uppercase tracking-wide text-white/60">Comments</label>
+                        <textarea
+                          className="field mt-1 min-h-20 resize-y"
+                          value={friend.comments}
+                          onChange={(event) => updateFriend(friend.id, (current) => ({ ...current, comments: event.target.value }))}
+                          placeholder="Bringing snacks, running late, need a ride..."
+                        />
+
+                        <div className="mt-3 flex gap-2">
                           <input
                             className="field"
                             value={draftMovies[friend.id] ?? ''}
@@ -577,7 +622,8 @@ function App() {
                         </div>
                       </details>
                     </motion.article>
-                  ))}
+                    )
+                  })}
                 </div>
               </section>
 
@@ -622,6 +668,16 @@ function App() {
                   </button>
                   <p className="text-sm text-white/75">{pickerResult ? `Selected: ${pickerResult}` : 'Pick a random movie from all suggestions.'}</p>
                 </div>
+              </section>
+
+              <section className="mt-8 flex justify-end">
+                <button
+                  type="button"
+                  onClick={resetAll}
+                  className="rounded-2xl border border-red-300/30 bg-red-500/15 px-5 py-3 text-sm font-semibold text-red-100 transition hover:bg-red-500/25 hover:text-white"
+                >
+                  Reset Everything
+                </button>
               </section>
             </motion.section>
           ) : (
@@ -680,6 +736,16 @@ function App() {
                   ))}
                 </ol>
               </article>
+
+              <section className="flex justify-end pt-3">
+                <button
+                  type="button"
+                  onClick={resetAll}
+                  className="rounded-2xl border border-red-300/30 bg-red-500/15 px-5 py-3 text-sm font-semibold text-red-100 transition hover:bg-red-500/25 hover:text-white"
+                >
+                  Reset Everything
+                </button>
+              </section>
             </motion.section>
           )}
         </AnimatePresence>
