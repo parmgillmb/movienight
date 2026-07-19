@@ -1,5 +1,5 @@
 {
-  "name": "movie-night",
+  "name": "movienight",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview",
+    "deploy": "wrangler deploy",
     "pages:dev": "wrangler pages dev dist",
     "pages:deploy": "wrangler pages deploy dist"
   },

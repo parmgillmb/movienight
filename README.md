@@ -1,6 +1,6 @@
-# Movie Night
+# movienight
 
-React + TypeScript app for planning movie night with shared cloud state on Cloudflare Pages.
+React + TypeScript app for planning movie night with shared cloud state on Cloudflare Workers.
 
 ## Local development
 
@@ -17,32 +17,35 @@ npm.cmd run build
 
 ## Cloudflare local dev
 
-If you have already created the D1 database, replace `REPLACE_WITH_YOUR_D1_DATABASE_ID` in [wrangler.jsonc](wrangler.jsonc) and then run:
+If you have already created the D1 database, the binding in [wrangler.jsonc](wrangler.jsonc) is already wired to `DB`. Run:
 
 ```powershell
-npx wrangler pages dev dist --d1 DB=REPLACE_WITH_YOUR_D1_DATABASE_ID
+npm.cmd run deploy
 ```
 
-If you prefer the Cloudflare dashboard, you can also add the `DB` binding there and deploy without using Wrangler.
+If you want to preview locally with Wrangler instead of Vite, run:
+
+```powershell
+npx wrangler dev
+```
 
 ## Cloudflare shared saving
 
-This app uses a Cloudflare Pages Function at `functions/api/state.js`, a D1 database table named `movie_night_state`, and the binding declared in `wrangler.jsonc`.
+This app uses a Cloudflare Worker entrypoint at `src/worker.js`, a D1 database table named `movie_night_state`, and the binding declared in `wrangler.jsonc`.
 
 To enable shared editing for everyone who opens the link:
 
-### Option A: Cloudflare dashboard
+### Option A: Wrangler / CLI
 
 1. Create a D1 database in Cloudflare.
 2. Apply the migration in `migrations/0001_init.sql`.
-3. Add a D1 binding named `DB` in your Pages project settings.
-4. Redeploy the site.
+3. Keep the `DB` binding in [wrangler.jsonc](wrangler.jsonc) pointed at your D1 database ID.
+4. Run `npm.cmd run deploy`.
 
-### Option B: Wrangler / CLI
+### Option B: Cloudflare dashboard
 
 1. Create a D1 database in Cloudflare.
-2. Apply the migration in `migrations/0001_init.sql`.
-3. Replace `REPLACE_WITH_YOUR_D1_DATABASE_ID` in [wrangler.jsonc](wrangler.jsonc).
-4. Run the local Pages dev command or deploy with Wrangler.
+2. Add a D1 binding named `DB` in your Worker/Pages project settings.
+3. Redeploy the site.
 
 The dashboard will then load and save the shared state from the cloud instead of each visitor's browser.
