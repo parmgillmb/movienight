@@ -76,18 +76,6 @@ const ARRIVAL_OPTIONS = generateArrivalOptions()
 
 const FRIENDS = ['Nik', 'Sebastian', 'Mattias', 'Robbie', 'Ethan', 'Cam', 'Parmeet', 'Raph', 'Aiden']
 
-const DEFAULT_MOVIES: Record<string, string[]> = {
-  Nik: ['Interstellar', 'The Batman', 'Dune Part Two'],
-  Sebastian: ['The Prestige', 'Blade Runner 2049', 'Arrival'],
-  Mattias: ['Interstellar', 'The Dark Knight', 'Whiplash'],
-  Robbie: ['Dune Part Two', 'The Lord of the Rings', 'Mad Max: Fury Road'],
-  Ethan: ['The Dark Knight', 'Inception', 'Top Gun: Maverick'],
-  Cam: ['The Prestige', 'Spider-Man: Into the Spider-Verse', 'The Matrix'],
-  Parmeet: ['Interstellar', 'The Dark Knight', 'The Prestige', 'Dune Part Two'],
-  Raph: ['Everything Everywhere All at Once', 'John Wick', 'The Social Network'],
-  Aiden: ['Oppenheimer', 'The Matrix', 'Avengers: Endgame'],
-}
-
 const MOVIE_META: Record<string, MovieMeta> = {
   Interstellar: { year: 2014, runtime: '2h 49m', genre: 'Sci-Fi' },
   'The Dark Knight': { year: 2008, runtime: '2h 32m', genre: 'Action' },
