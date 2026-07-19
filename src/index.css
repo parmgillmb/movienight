@@ -12,21 +12,6 @@
   --accent: #ef4444;
 }
 
-:root[data-theme='light'] {
-  --canvas: #f2f3f8;
-  --mesh-1: #c6d2ec;
-  --mesh-2: #f8c6c6;
-  --panel: rgba(255, 255, 255, 0.78);
-  --panel-border: rgba(15, 23, 42, 0.12);
-  --text-main: #111827;
-  --text-muted: rgba(17, 24, 39, 0.72);
-  --accent: #dc2626;
-}
-
-@theme inline {
-  --color-canvas: var(--canvas);
-}
-
 * {
   box-sizing: border-box;
 }

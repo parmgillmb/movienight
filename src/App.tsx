@@ -5,19 +5,15 @@ import {
   Edit3,
   Film,
   House,
-  Moon,
   PartyPopper,
-  Pizza,
   Plus,
   Search,
   Sparkles,
   Star,
-  Sun,
   Trash2,
 } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
-type Theme = 'dark' | 'light'
 type AttendanceStatus = 'yes' | 'maybe' | 'no'
 type Tab = 'dashboard' | 'voting'
 
@@ -45,18 +41,7 @@ type MovieNightDetails = {
   notes: string
 }
 
-type SnackSignup = {
-  id: string
-  item: string
-  by: string
-}
 
-type PizzaPoll = {
-  pepperoni: number
-  veggie: number
-  cheese: number
-  hawaiian: number
-}
 
 type MovieVote = {
   wantToWatch: boolean
@@ -65,11 +50,8 @@ type MovieVote = {
 }
 
 type AppState = {
-  theme: Theme
   details: MovieNightDetails
   friends: Friend[]
-  snackSignups: SnackSignup[]
-  pizzaPoll: PizzaPoll
   movieVotes: Record<string, MovieVote>
 }
 
@@ -81,7 +63,16 @@ type MovieMeta = {
 
 const STORAGE_KEY = 'movie-night-planner-v1'
 
-const ARRIVAL_OPTIONS = ['6:30 PM', '6:45 PM', '7:00 PM', '7:15 PM', '7:30 PM', '7:45 PM']
+const generateArrivalOptions = () => {
+  const out: string[] = []
+  // 12:00 PM (12:00) to 9:00 PM (21:00) every 30 minutes
+  for (let h = 12; h <= 21; h++) {
+    out.push(`${h % 12 === 0 ? 12 : h % 12}:00 ${h >= 12 ? 'PM' : 'AM'}`)
+    if (!(h === 21)) out.push(`${h % 12 === 0 ? 12 : h % 12}:30 ${h >= 12 ? 'PM' : 'AM'}`)
+  }
+  return out
+}
+const ARRIVAL_OPTIONS = generateArrivalOptions()
 
 const FRIENDS = ['Nik', 'Sebastian', 'Mattias', 'Robbie', 'Ethan', 'Cam', 'Parmeet', 'Raph', 'Aiden']
 
@@ -152,7 +143,6 @@ const fromMinutes = (value: number) => {
 }
 
 const defaultState: AppState = {
-  theme: 'dark',
   details: {
     title: 'Movie Night #12',
     date: '2026-08-08',
@@ -161,29 +151,14 @@ const defaultState: AppState = {
     host: 'Parmeet',
     notes: 'Bring your best snacks and arrive 15 minutes early for trailers.',
   },
-  friends: FRIENDS.map((name, index) => ({
+  friends: FRIENDS.map((name) => ({
     id: createId(),
     name,
-    status: index < 5 ? 'yes' : index < 7 ? 'maybe' : 'no',
-    arrivalTime: ARRIVAL_OPTIONS[index % ARRIVAL_OPTIONS.length],
-    comments: ['Bringing snacks', 'Running late', 'Need a ride', "I'll bring drinks"][index % 4],
-    movies: (DEFAULT_MOVIES[name] ?? []).map((title, movieIndex) => ({
-      id: `${name}-${movieIndex}-${normalizeTitle(title)}`,
-      title,
-      favorite: movieIndex === 0,
-    })),
+    status: 'maybe',
+    arrivalTime: '',
+    comments: '',
+    movies: [],
   })),
-  snackSignups: [
-    { id: createId(), item: 'Popcorn', by: 'Nik' },
-    { id: createId(), item: 'Coke Zero', by: 'Parmeet' },
-    { id: createId(), item: 'Nachos', by: 'Ethan' },
-  ],
-  pizzaPoll: {
-    pepperoni: 4,
-    veggie: 2,
-    cheese: 1,
-    hawaiian: 2,
-  },
   movieVotes: {},
 }
 
@@ -206,8 +181,7 @@ function App() {
   const [sortMode, setSortMode] = useState<'popularity' | 'title'>('popularity')
   const [draftMovies, setDraftMovies] = useState<Record<string, string>>({})
   const [draggedMovie, setDraggedMovie] = useState<{ friendId: string; movieId: string } | null>(null)
-  const [newSnackItem, setNewSnackItem] = useState('')
-  const [newSnackBy, setNewSnackBy] = useState(state.friends[0]?.name ?? '')
+  
   const [now, setNow] = useState(Date.now())
   const [pickerResult, setPickerResult] = useState('')
   const [isPickingMovie, setIsPickingMovie] = useState(false)
@@ -216,9 +190,7 @@ function App() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   }, [state])
 
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', state.theme)
-  }, [state.theme])
+  // app is dark-only by design per user request
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000)
@@ -341,16 +313,6 @@ function App() {
     return `${days}d ${hours}h ${minutes}m until showtime`
   }, [now, state.details.date, state.details.plannedStartTime])
 
-  const incrementPizzaVote = (option: keyof PizzaPoll, delta: number) => {
-    setState((prev) => ({
-      ...prev,
-      pizzaPoll: {
-        ...prev.pizzaPoll,
-        [option]: Math.max(0, prev.pizzaPoll[option] + delta),
-      },
-    }))
-  }
-
   const randomPickMovie = () => {
     if (!movieMasterList.length) return
     setIsPickingMovie(true)
@@ -387,15 +349,7 @@ function App() {
     })
   }
 
-  const addSnackItem = () => {
-    const item = newSnackItem.trim()
-    if (!item) return
-    setState((prev) => ({
-      ...prev,
-      snackSignups: [...prev.snackSignups, { id: createId(), item, by: newSnackBy }],
-    }))
-    setNewSnackItem('')
-  }
+  // snack signup removed per user request
 
   return (
     <div className="min-h-screen bg-canvas text-white">
@@ -409,16 +363,6 @@ function App() {
           <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
             <h1 className="font-display text-3xl tracking-tight sm:text-4xl">Movie Night Command Center</h1>
             <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setState((prev) => ({ ...prev, theme: prev.theme === 'dark' ? 'light' : 'dark' }))}
-                className="rounded-xl border border-white/20 px-3 py-2 text-sm font-medium transition hover:bg-white/10"
-              >
-                <span className="inline-flex items-center gap-2">
-                  {state.theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-                  Theme: {state.theme === 'dark' ? 'Dark' : 'Light'}
-                </span>
-              </button>
               <button
                 type="button"
                 onClick={() => setIsEditingDetails((prev) => !prev)}
@@ -548,6 +492,7 @@ function App() {
                         value={friend.arrivalTime}
                         onChange={(event) => updateFriend(friend.id, (current) => ({ ...current, arrivalTime: event.target.value }))}
                       >
+                        <option value="">Select time</option>
                         {ARRIVAL_OPTIONS.map((option) => (
                           <option key={option} value={option}>
                             {option}
@@ -679,49 +624,7 @@ function App() {
                 </article>
               </section>
 
-              <section className="grid gap-4 lg:grid-cols-3">
-                <article className="glass-card rounded-2xl border border-white/10 p-5 lg:col-span-2">
-                  <h2 className="section-title">Snack & Drink Signup</h2>
-                  <div className="mb-3 flex flex-col gap-2 sm:flex-row">
-                    <input className="field" value={newSnackItem} onChange={(event) => setNewSnackItem(event.target.value)} placeholder="Add snack or drink" />
-                    <select className="field sm:max-w-44" value={newSnackBy} onChange={(event) => setNewSnackBy(event.target.value)}>
-                      {state.friends.map((friend) => (
-                        <option key={friend.id} value={friend.name}>{friend.name}</option>
-                      ))}
-                    </select>
-                    <button type="button" onClick={addSnackItem} className="rounded-lg bg-red-500/90 px-4 py-2 font-semibold transition hover:bg-red-400">Add</button>
-                  </div>
-                  <ul className="grid gap-2 sm:grid-cols-2">
-                    {state.snackSignups.map((snack) => (
-                      <li key={snack.id} className="rounded-lg border border-white/10 bg-white/5 p-3 text-sm">
-                        <span className="font-medium">{snack.item}</span>
-                        <span className="text-white/70"> by {snack.by}</span>
-                      </li>
-                    ))}
-                  </ul>
-                </article>
-
-                <article className="glass-card rounded-2xl border border-white/10 p-5">
-                  <h2 className="section-title">Pizza Poll</h2>
-                  {(
-                    [
-                      ['pepperoni', 'Pepperoni'],
-                      ['veggie', 'Veggie'],
-                      ['cheese', 'Cheese'],
-                      ['hawaiian', 'Hawaiian'],
-                    ] as const
-                  ).map(([key, label]) => (
-                    <div key={key} className="mb-2 flex items-center justify-between rounded-lg border border-white/10 bg-white/5 px-3 py-2">
-                      <span className="inline-flex items-center gap-2"><Pizza size={14} /> {label}</span>
-                      <div className="flex items-center gap-2">
-                        <button type="button" onClick={() => incrementPizzaVote(key, -1)} className="mini-btn">-</button>
-                        <strong>{state.pizzaPoll[key]}</strong>
-                        <button type="button" onClick={() => incrementPizzaVote(key, 1)} className="mini-btn">+</button>
-                      </div>
-                    </div>
-                  ))}
-                </article>
-              </section>
+              
 
               <section className="glass-card rounded-2xl border border-white/10 p-5">
                 <h2 className="section-title">Random Movie Picker Wheel</h2>
