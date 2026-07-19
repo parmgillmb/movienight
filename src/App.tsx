@@ -207,7 +207,17 @@ function App() {
   }
 
   const resetAll = () => {
-    const nextState = createDefaultState()
+    const nextState: AppState = {
+      details: { ...DEFAULT_DETAILS },
+      friends: state.friends.map((friend) => ({
+        ...friend,
+        status: '',
+        arrivalTime: formatTimeInputLabel(DEFAULT_DETAILS.plannedStartTime),
+        comments: '',
+        movies: friend.movies,
+      })),
+      movieVotes: {},
+    }
     setState(nextState)
     setActiveTab('dashboard')
     setIsEditingDetails(false)
@@ -493,7 +503,6 @@ function App() {
                       <p className="mb-3 text-xs uppercase tracking-wide text-white/60">Attendance Status</p>
                       <div className="mb-3 grid grid-cols-3 gap-2">
                         {([
-                          ['', 'None'],
                           ['yes', 'Yes'],
                           ['maybe', 'Maybe'],
                           ['no', 'No'],
@@ -507,7 +516,7 @@ function App() {
                               : 'border border-white/10 bg-white/5 text-white/70 hover:bg-white/10'
                               }`}
                           >
-                            {status === 'yes' ? '✅' : status === 'maybe' ? '❓' : status === 'no' ? '❌' : '–'} {label}
+                              {status === 'yes' ? '✅' : status === 'maybe' ? '❓' : '❌'} {label}
                           </button>
                         ))}
                       </div>
