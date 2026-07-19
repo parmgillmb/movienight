@@ -31,7 +31,11 @@ CREATE TABLE IF NOT EXISTS movie_night_state (
 `
 
 async function ensureStateRow(env) {
-  await env.DB.prepare(TABLE_SQL).run()
+  if (!env.DB) {
+    throw new Error('Missing Cloudflare Pages D1 binding named DB.')
+  }
+
+  await env.DB.exec(TABLE_SQL)
 
   const existing = await env.DB.prepare('SELECT state_json FROM movie_night_state WHERE id = ?1').bind('primary').first()
   if (!existing) {
@@ -52,7 +56,11 @@ async function ensureStateRow(env) {
 }
 
 async function saveState(env, state) {
-  await env.DB.prepare(TABLE_SQL).run()
+  if (!env.DB) {
+    throw new Error('Missing Cloudflare Pages D1 binding named DB.')
+  }
+
+  await env.DB.exec(TABLE_SQL)
   await env.DB.prepare(
     `
     INSERT INTO movie_night_state (id, state_json, updated_at)
@@ -66,13 +74,25 @@ async function saveState(env, state) {
     .run()
 }
 
-export async function onRequestGet({ env }) {
-  const state = await ensureStateRow(env)
-  return Response.json(state)
-}
+export async function onRequest(context) {
+  try {
+    const { request, env } = context
+    const { method } = request
 
-export async function onRequestPut({ request, env }) {
-  const state = await request.json()
-  await saveState(env, state)
-  return Response.json({ ok: true })
+    if (method === 'GET') {
+      const state = await ensureStateRow(env)
+      return Response.json(state)
+    }
+
+    if (method === 'PUT') {
+      const state = await request.json()
+      await saveState(env, state)
+      return Response.json({ ok: true })
+    }
+
+    return Response.json({ error: 'Method not allowed' }, { status: 405 })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown sync error'
+    return Response.json({ error: message }, { status: 500 })
+  }
 }

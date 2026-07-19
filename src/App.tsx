@@ -176,6 +176,7 @@ function App() {
   const [isPickingMovie, setIsPickingMovie] = useState(false)
   const [isLoaded, setIsLoaded] = useState(false)
   const [syncStatus, setSyncStatus] = useState<'loading' | 'saved' | 'saving' | 'error'>('loading')
+  const [syncMessage, setSyncMessage] = useState('')
   const lastSavedStateRef = useRef('')
 
   // app is dark-only by design per user request
@@ -187,7 +188,8 @@ function App() {
       try {
         const response = await fetch('/api/state')
         if (!response.ok) {
-          throw new Error(`Failed to load shared state: ${response.status}`)
+          const payload = (await response.json().catch(() => null)) as { error?: string } | null
+          throw new Error(payload?.error ?? `Failed to load shared state: ${response.status}`)
         }
 
         const remoteState = (await response.json()) as AppState
@@ -198,6 +200,7 @@ function App() {
         lastSavedStateRef.current = serialized
         setState(remoteState)
         setSyncStatus('saved')
+        setSyncMessage('')
       } catch {
         if (cancelled) return
 
@@ -205,6 +208,7 @@ function App() {
         lastSavedStateRef.current = serialized
         setState(defaultState)
         setSyncStatus('error')
+        setSyncMessage('Shared cloud state is unavailable. Check that the Pages D1 binding is named DB and deployed.')
       } finally {
         if (!cancelled) setIsLoaded(true)
       }
@@ -237,12 +241,15 @@ function App() {
           })
 
           if (!response.ok) {
-            throw new Error(`Failed to save shared state: ${response.status}`)
+            const payload = (await response.json().catch(() => null)) as { error?: string } | null
+            throw new Error(payload?.error ?? `Failed to save shared state: ${response.status}`)
           }
 
           lastSavedStateRef.current = serialized
           setSyncStatus('saved')
+          setSyncMessage('')
         } catch {
+          setSyncMessage('Cloud save failed. Check the Pages Functions log for the exact backend error.')
           setSyncStatus('error')
         }
       })()
@@ -462,6 +469,12 @@ function App() {
               </button>
             </div>
           </div>
+
+          {syncStatus === 'error' && syncMessage ? (
+            <p className="mt-3 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+              {syncMessage}
+            </p>
+          ) : null}
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
             <div className="info-pill">
