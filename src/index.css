@@ -253,6 +253,44 @@ body {
   box-shadow: 0 10px 26px color-mix(in srgb, var(--no) 45%, transparent);
 }
 
+/* Confirm button — locks in the pending pick */
+.confirm-btn {
+  width: 100%;
+  border-radius: 0.75rem;
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  padding: 0.55rem;
+  font-weight: 700;
+  font-size: 0.9rem;
+  cursor: not-allowed;
+  transition: transform 0.15s ease, background-color 0.2s ease, box-shadow 0.2s ease, color 0.2s ease;
+}
+.confirm-btn-ready {
+  cursor: pointer;
+  color: #fff;
+  background: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 60%, white 40%);
+  box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 40%, transparent);
+  animation: confirm-nudge 1.6s ease-in-out infinite;
+}
+.confirm-btn-ready:hover {
+  transform: translateY(-1px);
+}
+@keyframes confirm-nudge {
+  0%, 100% {
+    box-shadow: 0 8px 22px color-mix(in srgb, var(--accent) 40%, transparent);
+  }
+  50% {
+    box-shadow: 0 8px 30px color-mix(in srgb, var(--accent) 65%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .confirm-btn-ready {
+    animation: none;
+  }
+}
+
 /* Person card gets a colored left edge + glow matching their status */
 .person-card {
   border-left: 5px solid var(--panel-border);

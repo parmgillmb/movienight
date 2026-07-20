@@ -5,7 +5,6 @@ import {
   Edit3,
   Film,
   House,
-  PartyPopper,
   Plus,
   Sparkles,
   Star,
@@ -14,7 +13,6 @@ import {
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 type AttendanceStatus = 'yes' | 'maybe' | 'no' | ''
-type Tab = 'dashboard' | 'voting'
 
 type MovieSuggestion = {
   id: string
@@ -54,12 +52,6 @@ type AppState = {
   movieVotes: Record<string, MovieVote>
 }
 
-type MovieMeta = {
-  year: number
-  runtime: string
-  genre: string
-}
-
 const generateArrivalOptions = () => {
   const out: string[] = []
   // 12:00 PM (12:00) to 9:00 PM (21:00) every 30 minutes
@@ -73,34 +65,10 @@ const ARRIVAL_OPTIONS = generateArrivalOptions()
 
 const FRIENDS = ['Nik', 'Sebastian', 'Mattias', 'Robbie', 'Ethan', 'Cam', 'Parmeet', 'Raph', 'Aiden']
 
-const MOVIE_META: Record<string, MovieMeta> = {
-  Interstellar: { year: 2014, runtime: '2h 49m', genre: 'Sci-Fi' },
-  'The Dark Knight': { year: 2008, runtime: '2h 32m', genre: 'Action' },
-  'The Prestige': { year: 2006, runtime: '2h 10m', genre: 'Thriller' },
-  'Dune Part Two': { year: 2024, runtime: '2h 46m', genre: 'Sci-Fi' },
-  'The Batman': { year: 2022, runtime: '2h 56m', genre: 'Action' },
-  'Blade Runner 2049': { year: 2017, runtime: '2h 44m', genre: 'Sci-Fi' },
-  Arrival: { year: 2016, runtime: '1h 56m', genre: 'Sci-Fi' },
-  Whiplash: { year: 2014, runtime: '1h 47m', genre: 'Drama' },
-  'The Lord of the Rings': { year: 2001, runtime: '2h 58m', genre: 'Fantasy' },
-  'Mad Max: Fury Road': { year: 2015, runtime: '2h 0m', genre: 'Action' },
-  Inception: { year: 2010, runtime: '2h 28m', genre: 'Sci-Fi' },
-  'Top Gun: Maverick': { year: 2022, runtime: '2h 10m', genre: 'Action' },
-  'Spider-Man: Into the Spider-Verse': { year: 2018, runtime: '1h 57m', genre: 'Animation' },
-  'The Matrix': { year: 1999, runtime: '2h 16m', genre: 'Sci-Fi' },
-  'Everything Everywhere All at Once': { year: 2022, runtime: '2h 19m', genre: 'Sci-Fi' },
-  'John Wick': { year: 2014, runtime: '1h 41m', genre: 'Action' },
-  'The Social Network': { year: 2010, runtime: '2h 0m', genre: 'Drama' },
-  Oppenheimer: { year: 2023, runtime: '3h 0m', genre: 'Drama' },
-  'Avengers: Endgame': { year: 2019, runtime: '3h 1m', genre: 'Action' },
-}
-
 const createId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2)
-
-const normalizeTitle = (value: string) => value.trim().toLowerCase()
 
 const STATUS_COLOR: Record<Exclude<AttendanceStatus, ''>, string> = {
   yes: '#22c55e',
@@ -155,9 +123,9 @@ const fromMinutes = (value: number) => {
 }
 
 const DEFAULT_DETAILS: MovieNightDetails = {
-    title: 'Movie Night #12',
+    title: 'Movie Night',
     date: '2026-08-08',
-    plannedStartTime: '19:00',
+    plannedStartTime: '16:00',
     location: "Parmeet's House",
     host: 'Parmeet',
     notes: 'Bring your best snacks and arrive 15 minutes early for trailers.',
@@ -186,13 +154,13 @@ const defaultState: AppState = createDefaultState()
 
 function App() {
   const [state, setState] = useState<AppState>(defaultState)
-  const [activeTab, setActiveTab] = useState<Tab>('dashboard')
   const [isEditingDetails, setIsEditingDetails] = useState(false)
   const [draftMovies, setDraftMovies] = useState<Record<string, string>>({})
   const [draggedMovie, setDraggedMovie] = useState<{ friendId: string; movieId: string } | null>(null)
+  // Unconfirmed status picks live only in local state; they sync to everyone
+  // only after the person presses Confirm.
+  const [pendingStatus, setPendingStatus] = useState<Record<string, AttendanceStatus>>({})
   const [now, setNow] = useState(Date.now())
-  const [pickerResult, setPickerResult] = useState('')
-  const [isPickingMovie, setIsPickingMovie] = useState(false)
   const [isLoaded, setIsLoaded] = useState(false)
   const [syncStatus, setSyncStatus] = useState<'loading' | 'saved' | 'saving' | 'error'>('loading')
   const [syncMessage, setSyncMessage] = useState('')
@@ -317,88 +285,49 @@ function App() {
     }))
   }
 
+  const defaultArrivalLabel = formatTimeInputLabel(state.details.plannedStartTime)
+
+  // The pick a person is currently considering: their local pending choice if
+  // any, otherwise their confirmed status.
+  const effectiveStatus = (friend: Friend): AttendanceStatus =>
+    friend.id in pendingStatus ? pendingStatus[friend.id] : friend.status
+
+  // Tap a status button: toggle it as a pending pick. Tapping the active one
+  // again clears it back to grey. Nothing syncs until Confirm.
+  const pickStatus = (friend: Friend, status: AttendanceStatus) => {
+    const current = effectiveStatus(friend)
+    setPendingStatus((prev) => ({ ...prev, [friend.id]: current === status ? '' : status }))
+  }
+
+  // Confirm locks the pending pick into the synced state for everyone to see.
+  const confirmStatus = (friendId: string) => {
+    const next = pendingStatus[friendId] ?? ''
+    updateFriend(friendId, (current) => ({ ...current, status: next }))
+    setPendingStatus((prev) => {
+      const clone = { ...prev }
+      delete clone[friendId]
+      return clone
+    })
+  }
+
   const resetAll = () => {
-    const nextState: AppState = {
-      details: { ...DEFAULT_DETAILS },
-      friends: state.friends.map((friend) => ({
+    // Keep all hero details (title, date, time, location, host, notes) exactly
+    // as they are; only clear each person's attendance and comments.
+    setState((prev) => ({
+      ...prev,
+      friends: prev.friends.map((friend) => ({
         ...friend,
         status: '',
-        arrivalTime: formatTimeInputLabel(DEFAULT_DETAILS.plannedStartTime),
+        arrivalTime: formatTimeInputLabel(prev.details.plannedStartTime),
         comments: '',
         movies: friend.movies,
       })),
-      movieVotes: {},
-    }
-    setState(nextState)
-    setActiveTab('dashboard')
+    }))
+    setPendingStatus({})
     setIsEditingDetails(false)
     setDraftMovies({})
     setDraggedMovie(null)
-    setPickerResult('')
-    setIsPickingMovie(false)
   }
-
-  const defaultArrivalLabel = formatTimeInputLabel(state.details.plannedStartTime)
-
-  const movieMasterList = useMemo(() => {
-    const movieMap = new Map<
-      string,
-      {
-        key: string
-        title: string
-        suggestedBy: string[]
-        year: number
-        runtime: string
-        genre: string
-      }
-    >()
-
-    state.friends.forEach((friend) => {
-      friend.movies.forEach((movie) => {
-        const key = normalizeTitle(movie.title)
-        const existing = movieMap.get(key)
-        const meta = MOVIE_META[movie.title] ?? {
-          year: 2020,
-          runtime: '2h 0m',
-          genre: 'Drama',
-        }
-        if (!existing) {
-          movieMap.set(key, {
-            key,
-            title: movie.title,
-            suggestedBy: [friend.name],
-            year: meta.year,
-            runtime: meta.runtime,
-            genre: meta.genre,
-          })
-          return
-        }
-        if (!existing.suggestedBy.includes(friend.name)) {
-          existing.suggestedBy.push(friend.name)
-        }
-      })
-    })
-
-    return [...movieMap.values()].map((movie) => {
-      const vote = state.movieVotes[movie.key] ?? {
-        wantToWatch: false,
-        notInterested: false,
-        favorite: false,
-      }
-      const popularity =
-        movie.suggestedBy.length * 3 + (vote.wantToWatch ? 3 : 0) + (vote.favorite ? 2 : 0) - (vote.notInterested ? 2 : 0)
-      return {
-        ...movie,
-        vote,
-        popularity,
-      }
-    })
-  }, [state.friends, state.movieVotes])
-
-  const sortedMovies = useMemo(
-    () => [...movieMasterList].sort((a, b) => b.popularity - a.popularity),
-    [movieMasterList],
-  )
 
   const attendanceStats = useMemo(() => {
     const yes = state.friends.filter((friend) => friend.status === 'yes')
@@ -431,11 +360,6 @@ function App() {
     [state.friends],
   )
 
-  const topMovies = useMemo(
-    () => [...movieMasterList].sort((a, b) => b.suggestedBy.length - a.suggestedBy.length).slice(0, 10),
-    [movieMasterList],
-  )
-
   const countdown = useMemo(() => {
     const target = new Date(`${state.details.date}T${state.details.plannedStartTime}:00`).getTime()
     const diff = target - now
@@ -446,44 +370,6 @@ function App() {
     const minutes = totalMinutes % 60
     return `${days}d ${hours}h ${minutes}m until showtime`
   }, [now, state.details.date, state.details.plannedStartTime])
-
-  const randomPickMovie = () => {
-    if (!movieMasterList.length) return
-    setIsPickingMovie(true)
-    window.setTimeout(() => {
-      const randomMovie = movieMasterList[Math.floor(Math.random() * movieMasterList.length)]
-      setPickerResult(randomMovie.title)
-      setIsPickingMovie(false)
-    }, 1200)
-  }
-
-  const toggleMovieVote = (movieKey: string, field: keyof MovieVote) => {
-    setState((prev) => {
-      const current = prev.movieVotes[movieKey] ?? {
-        wantToWatch: false,
-        notInterested: false,
-        favorite: false,
-      }
-
-      const next: MovieVote = {
-        ...current,
-        [field]: !current[field],
-      }
-
-      if (field === 'wantToWatch' && next.wantToWatch) next.notInterested = false
-      if (field === 'notInterested' && next.notInterested) next.wantToWatch = false
-
-      return {
-        ...prev,
-        movieVotes: {
-          ...prev.movieVotes,
-          [movieKey]: next,
-        },
-      }
-    })
-  }
-
-  // snack signup removed per user request
 
   return (
     <div className="min-h-screen bg-canvas text-white">
@@ -575,7 +461,18 @@ function App() {
               >
                 <input className="field" value={state.details.title} onChange={(event) => setState((prev) => ({ ...prev, details: { ...prev.details, title: event.target.value } }))} placeholder="Movie Night Title" />
                 <input className="field" type="date" value={state.details.date} onChange={(event) => setState((prev) => ({ ...prev, details: { ...prev.details, date: event.target.value } }))} />
-                <input className="field" type="time" value={state.details.plannedStartTime} onChange={(event) => setState((prev) => ({ ...prev, details: { ...prev.details, plannedStartTime: event.target.value } }))} />
+                <input className="field" type="time" value={state.details.plannedStartTime} onChange={(event) => setState((prev) => {
+                  const prevDefault = formatTimeInputLabel(prev.details.plannedStartTime)
+                  const nextDefault = formatTimeInputLabel(event.target.value)
+                  return {
+                    ...prev,
+                    details: { ...prev.details, plannedStartTime: event.target.value },
+                    // Everyone still on the old default arrival follows the new start time.
+                    friends: prev.friends.map((friend) =>
+                      friend.arrivalTime === prevDefault ? { ...friend, arrivalTime: nextDefault } : friend,
+                    ),
+                  }
+                })} />
                 <input className="field" value={state.details.location} onChange={(event) => setState((prev) => ({ ...prev, details: { ...prev.details, location: event.target.value } }))} placeholder="Location" />
                 <input className="field" value={state.details.host} onChange={(event) => setState((prev) => ({ ...prev, details: { ...prev.details, host: event.target.value } }))} placeholder="Host" />
                 <input className="field md:col-span-2" value={state.details.notes} onChange={(event) => setState((prev) => ({ ...prev, details: { ...prev.details, notes: event.target.value } }))} placeholder="Description / Notes" />
@@ -584,26 +481,7 @@ function App() {
           </AnimatePresence>
         </motion.header>
 
-        <div className="mb-6 flex gap-2 rounded-2xl border border-white/10 bg-black/20 p-1.5 backdrop-blur">
-          <button
-            type="button"
-            onClick={() => setActiveTab('dashboard')}
-            className={`tab-btn ${activeTab === 'dashboard' ? 'tab-btn-active' : ''}`}
-          >
-            Dashboard
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('voting')}
-            className={`tab-btn ${activeTab === 'voting' ? 'tab-btn-active' : ''}`}
-          >
-            Movie Voting
-          </button>
-        </div>
-
-        <AnimatePresence mode="wait">
-          {activeTab === 'dashboard' ? (
-            <motion.section key="dashboard" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} className="space-y-6">
+        <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
               <section className="glass-card rounded-2xl border border-white/10 p-5">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <h2 className="section-title mb-0">Who's Coming</h2>
@@ -655,6 +533,9 @@ function App() {
                     const hasCustomArrival = Boolean(friend.arrivalTime) && friend.arrivalTime !== defaultArrivalLabel
                     const hasComment = friend.comments.trim().length > 0
 
+                    const pending = effectiveStatus(friend)
+                    const needsConfirm = pending !== friend.status
+
                     return (
                     <motion.article
                       key={friend.id}
@@ -674,14 +555,27 @@ function App() {
                           <button
                             key={status}
                             type="button"
-                            onClick={() => updateFriend(friend.id, (current) => ({ ...current, status }))}
-                            className={`status-btn status-btn-${status} ${friend.status === status ? 'status-btn-active' : ''}`}
+                            onClick={() => pickStatus(friend, status)}
+                            className={`status-btn status-btn-${status} ${pending === status ? 'status-btn-active' : ''}`}
                           >
                             <span className="emoji">{emoji}</span>
                             {label}
                           </button>
                         ))}
                       </div>
+
+                      <button
+                        type="button"
+                        onClick={() => confirmStatus(friend.id)}
+                        disabled={!needsConfirm}
+                        className={`confirm-btn mb-3 ${needsConfirm ? 'confirm-btn-ready' : ''}`}
+                      >
+                        {needsConfirm
+                          ? `✓ Confirm ${pending ? STATUS_LABEL[pending] : 'no reply'}`
+                          : friend.status
+                            ? `Confirmed: ${STATUS_LABEL[friend.status]}`
+                            : 'Pick a status above'}
+                      </button>
 
                       {(hasCustomArrival || hasComment) ? (
                         <div className="mt-2 space-y-2 rounded-2xl border border-white/10 bg-black/20 p-3 text-sm text-white/80">
@@ -798,49 +692,6 @@ function App() {
                 </div>
               </section>
 
-              <section className="grid gap-4 lg:grid-cols-2">
-                <article className="glass-card rounded-2xl border border-white/10 p-5">
-                  <h2 className="section-title">Attendance Summary</h2>
-                  <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    <div className="stat-block tile-yes"><p>Going</p><strong>{attendanceStats.yes}</strong></div>
-                    <div className="stat-block tile-maybe"><p>Maybe</p><strong>{attendanceStats.maybe}</strong></div>
-                    <div className="stat-block tile-no"><p>Can't</p><strong>{attendanceStats.no}</strong></div>
-                    <div className="stat-block"><p>Expected</p><strong>{attendanceStats.expectedGuests}</strong></div>
-                  </div>
-                  <div className="mt-4 space-y-1 text-sm text-white/80">
-                    <p>Coming Earliest: {attendanceStats.earliest}</p>
-                    <p>Coming Latest: {attendanceStats.latest}</p>
-                    <p>Average Arrival Time: {attendanceStats.average}</p>
-                  </div>
-                </article>
-
-                <article className="glass-card rounded-2xl border border-white/10 p-5">
-                  <h2 className="section-title">Movie Suggestions Summary</h2>
-                  <ul className="space-y-2">
-                    {topMovies.map((movie, index) => (
-                      <li key={movie.key} className="rounded-lg border border-white/10 bg-white/5 p-3">
-                        <p className="font-semibold">
-                          #{index + 1} {movie.title}
-                        </p>
-                        <p className="text-xs text-white/70">Suggested by: {movie.suggestedBy.join(', ')}</p>
-                      </li>
-                    ))}
-                  </ul>
-                </article>
-              </section>
-
-              
-
-              <section className="glass-card rounded-2xl border border-white/10 p-5">
-                <h2 className="section-title">Random Movie Picker Wheel</h2>
-                <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
-                  <button type="button" onClick={randomPickMovie} className={`rounded-xl px-4 py-2 font-semibold transition ${isPickingMovie ? 'animate-pulse bg-white/20' : 'bg-red-500/90 hover:bg-red-400'}`}>
-                    <span className="inline-flex items-center gap-2"><PartyPopper size={16} /> Spin Picker</span>
-                  </button>
-                  <p className="text-sm text-white/75">{pickerResult ? `Selected: ${pickerResult}` : 'Pick a random movie from all suggestions.'}</p>
-                </div>
-              </section>
-
               <section className="mt-8 flex justify-end">
                 <button
                   type="button"
@@ -850,68 +701,7 @@ function App() {
                   Reset Everything
                 </button>
               </section>
-            </motion.section>
-          ) : (
-            <motion.section key="voting" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} className="space-y-5">
-              <div className="glass-card rounded-2xl border border-white/10 p-4">
-                <p className="text-sm text-white/70">
-                  Vote on every movie below. Tap <span className="font-semibold text-emerald-300">👍 Want</span>,{' '}
-                  <span className="font-semibold text-rose-300">👎 Pass</span>, or{' '}
-                  <span className="font-semibold text-amber-300">⭐ Fav</span>. Most popular rise to the top.
-                </p>
-              </div>
-
-              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {sortedMovies.map((movie) => (
-                  <article key={movie.key} className="glass-card overflow-hidden rounded-2xl border border-white/10">
-                    <img
-                      src={`https://dummyimage.com/420x560/111827/f3f4f6&text=${encodeURIComponent(movie.title)}`}
-                      alt={`${movie.title} poster`}
-                      className="h-44 w-full object-cover"
-                      loading="lazy"
-                    />
-                    <div className="space-y-2 p-4">
-                      <h3 className="font-display text-xl leading-tight">{movie.title}</h3>
-                      <p className="text-sm text-white/75">{movie.year} • {movie.runtime} • {movie.genre}</p>
-                      <p className="text-sm text-white/80">Suggested by {movie.suggestedBy.length} {movie.suggestedBy.length === 1 ? 'person' : 'people'}</p>
-                      <p className="text-xs text-white/60">{movie.suggestedBy.join(', ')}</p>
-
-                      <div className="mt-3 grid grid-cols-3 gap-2">
-                        <button type="button" onClick={() => toggleMovieVote(movie.key, 'wantToWatch')} className={`vote-btn ${movie.vote.wantToWatch ? 'vote-positive' : ''}`}>👍 Want</button>
-                        <button type="button" onClick={() => toggleMovieVote(movie.key, 'notInterested')} className={`vote-btn ${movie.vote.notInterested ? 'vote-negative' : ''}`}>👎 Pass</button>
-                        <button type="button" onClick={() => toggleMovieVote(movie.key, 'favorite')} className={`vote-btn ${movie.vote.favorite ? 'vote-favorite' : ''}`}>⭐ Fav</button>
-                      </div>
-
-                      <p className="rounded-lg border border-white/10 bg-black/20 px-2 py-1 text-xs text-white/70">Popularity Score: {movie.popularity}</p>
-                    </div>
-                  </article>
-                ))}
-              </div>
-
-              <article className="glass-card rounded-2xl border border-white/10 p-5">
-                <h2 className="section-title">Top 10 Ranked</h2>
-                <ol className="grid gap-2 sm:grid-cols-2">
-                  {sortedMovies.slice(0, 10).map((movie, index) => (
-                    <li key={movie.key} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm">
-                      <strong>#{index + 1} {movie.title}</strong>
-                      <p className="text-xs text-white/65">Popularity {movie.popularity}</p>
-                    </li>
-                  ))}
-                </ol>
-              </article>
-
-              <section className="flex justify-end pt-3">
-                <button
-                  type="button"
-                  onClick={resetAll}
-                  className="rounded-2xl border border-red-300/30 bg-red-500/15 px-5 py-3 text-sm font-semibold text-red-100 transition hover:bg-red-500/25 hover:text-white"
-                >
-                  Reset Everything
-                </button>
-              </section>
-            </motion.section>
-          )}
-        </AnimatePresence>
+        </motion.section>
       </main>
     </div>
   )
