@@ -22,20 +22,17 @@ const defaultState = {
   movieVotes: {},
 }
 
-const TABLE_SQL = `
-CREATE TABLE IF NOT EXISTS movie_night_state (
-  id TEXT PRIMARY KEY NOT NULL,
-  state_json TEXT NOT NULL,
-  version INTEGER NOT NULL DEFAULT 1,
-  updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
-)
-`
+// Single-line form: D1's env.DB.exec() parses input line-by-line and rejects a
+// multi-line statement ("incomplete input"), so keep this on one line. We use
+// prepare().run() below, which is robust either way.
+const TABLE_SQL =
+  'CREATE TABLE IF NOT EXISTS movie_night_state (id TEXT PRIMARY KEY NOT NULL, state_json TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)'
 
 // Older deployments created the table before `version` existed; add it if missing.
 async function ensureSchema(env) {
-  await env.DB.exec(TABLE_SQL)
+  await env.DB.prepare(TABLE_SQL).run()
   try {
-    await env.DB.exec('ALTER TABLE movie_night_state ADD COLUMN version INTEGER NOT NULL DEFAULT 1')
+    await env.DB.prepare('ALTER TABLE movie_night_state ADD COLUMN version INTEGER NOT NULL DEFAULT 1').run()
   } catch {
     // Column already exists — SQLite throws a duplicate-column error we can ignore.
   }
