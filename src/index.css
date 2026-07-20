@@ -10,6 +10,10 @@
   --text-main: #f8fafc;
   --text-muted: rgba(241, 245, 249, 0.72);
   --accent: #ef4444;
+  /* Attendance status palette: yes=green, maybe=blue, no=red */
+  --yes: #22c55e;
+  --maybe: #3b82f6;
+  --no: #ef4444;
 }
 
 * {
@@ -35,19 +39,46 @@ body {
 
 .mesh-bg {
   position: fixed;
-  inset: 0;
+  inset: -20%;
   background:
     radial-gradient(circle at 15% 20%, var(--mesh-1), transparent 45%),
     radial-gradient(circle at 85% 75%, var(--mesh-2), transparent 50%),
     linear-gradient(145deg, rgba(255, 255, 255, 0.03), transparent 40%);
   z-index: 0;
   pointer-events: none;
+  /* slow living drift so the backdrop feels alive */
+  animation: mesh-drift 24s ease-in-out infinite alternate;
+}
+
+@keyframes mesh-drift {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(2.5%, -2%, 0) scale(1.06);
+  }
+  100% {
+    transform: translate3d(-2%, 2.5%, 0) scale(1.03);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mesh-bg {
+    animation: none;
+  }
 }
 
 .glass-card {
   background: var(--panel);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
+  transition: transform 0.2s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+}
+
+/* Cards that represent a person lift gently on hover for a lively feel */
+.lift:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.4);
 }
 
 .info-pill {
@@ -168,8 +199,228 @@ body {
   background: rgba(245, 158, 11, 0.3);
 }
 
+/* ============================================================
+   Attendance status system  (yes = green, maybe = blue, no = red)
+   ============================================================ */
+
+/* The three big Yes / Maybe / No choice buttons */
+.status-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  border-radius: 0.85rem;
+  border: 1px solid var(--panel-border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  padding: 0.6rem 0.4rem;
+  font-weight: 700;
+  font-size: 0.9rem;
+  transition: transform 0.15s ease, background-color 0.2s ease, box-shadow 0.2s ease,
+    color 0.2s ease, border-color 0.2s ease;
+}
+
+.status-btn .emoji {
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.status-btn:hover {
+  color: var(--text-main);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.status-btn-active {
+  color: #fff;
+  transform: scale(1.05);
+}
+
+.status-btn-yes.status-btn-active {
+  background: var(--yes);
+  border-color: color-mix(in srgb, var(--yes) 60%, white 40%);
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--yes) 45%, transparent);
+}
+
+.status-btn-maybe.status-btn-active {
+  background: var(--maybe);
+  border-color: color-mix(in srgb, var(--maybe) 60%, white 40%);
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--maybe) 45%, transparent);
+}
+
+.status-btn-no.status-btn-active {
+  background: var(--no);
+  border-color: color-mix(in srgb, var(--no) 60%, white 40%);
+  box-shadow: 0 10px 26px color-mix(in srgb, var(--no) 45%, transparent);
+}
+
+/* Person card gets a colored left edge + glow matching their status */
+.person-card {
+  border-left: 5px solid var(--panel-border);
+}
+.person-yes {
+  border-left-color: var(--yes);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--yes) 25%, transparent);
+}
+.person-maybe {
+  border-left-color: var(--maybe);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--maybe) 25%, transparent);
+}
+.person-no {
+  border-left-color: var(--no);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--no) 25%, transparent);
+}
+
+/* Small status pill used in the at-a-glance strip */
+.status-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border-radius: 999px;
+  padding: 0.28rem 0.7rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+.chip-yes {
+  background: color-mix(in srgb, var(--yes) 22%, transparent);
+  color: color-mix(in srgb, var(--yes) 55%, white);
+  border-color: color-mix(in srgb, var(--yes) 45%, transparent);
+}
+.chip-maybe {
+  background: color-mix(in srgb, var(--maybe) 22%, transparent);
+  color: color-mix(in srgb, var(--maybe) 60%, white);
+  border-color: color-mix(in srgb, var(--maybe) 45%, transparent);
+}
+.chip-no {
+  background: color-mix(in srgb, var(--no) 22%, transparent);
+  color: color-mix(in srgb, var(--no) 60%, white);
+  border-color: color-mix(in srgb, var(--no) 45%, transparent);
+}
+.chip-none {
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+  border-color: var(--panel-border);
+}
+
+/* Summary tiles tinted by status */
+.tile-yes {
+  border-color: color-mix(in srgb, var(--yes) 45%, transparent);
+  background: color-mix(in srgb, var(--yes) 14%, transparent);
+}
+.tile-maybe {
+  border-color: color-mix(in srgb, var(--maybe) 45%, transparent);
+  background: color-mix(in srgb, var(--maybe) 14%, transparent);
+}
+.tile-no {
+  border-color: color-mix(in srgb, var(--no) 45%, transparent);
+  background: color-mix(in srgb, var(--no) 14%, transparent);
+}
+
+/* ============================================================
+   Hero detail tiles — big and quick to read
+   ============================================================ */
+.hero-detail {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-radius: 1rem;
+  border: 1px solid var(--panel-border);
+  background: rgba(0, 0, 0, 0.22);
+  padding: 0.9rem 1rem;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+.hero-detail:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--panel-border));
+}
+.hero-detail .icon-wrap {
+  display: grid;
+  place-items: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border-radius: 0.8rem;
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  color: color-mix(in srgb, var(--accent) 55%, white);
+  flex-shrink: 0;
+}
+.hero-detail .label {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.hero-detail .value {
+  font-family: 'Sora', sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+/* Countdown pill, larger and gently pulsing */
+.countdown-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: color-mix(in srgb, var(--accent) 45%, white);
+  padding: 0.55rem 1.1rem;
+  font-weight: 700;
+  font-size: 1rem;
+}
+.countdown-pill .dot {
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 999px;
+  background: var(--accent);
+  animation: live-pulse 1.8s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  50% {
+    opacity: 0.6;
+    box-shadow: 0 0 0 6px transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .countdown-pill .dot {
+    animation: none;
+  }
+}
+
+/* ============================================================
+   Comments digest — everyone's notes, quick to scan up top
+   ============================================================ */
+.comment-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  border-radius: 0.9rem;
+  border: 1px solid var(--panel-border);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 0.75rem 0.9rem;
+}
+.comment-avatar {
+  display: grid;
+  place-items: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 0.85rem;
+  color: #fff;
+  flex-shrink: 0;
+}
+
 @media (max-width: 640px) {
   .section-title {
     font-size: 1rem;
+  }
+  .hero-detail .value {
+    font-size: 1.05rem;
   }
 }

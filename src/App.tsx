@@ -7,7 +7,6 @@ import {
   House,
   PartyPopper,
   Plus,
-  Search,
   Sparkles,
   Star,
   Trash2,
@@ -103,6 +102,29 @@ const createId = () =>
 
 const normalizeTitle = (value: string) => value.trim().toLowerCase()
 
+const STATUS_COLOR: Record<Exclude<AttendanceStatus, ''>, string> = {
+  yes: '#22c55e',
+  maybe: '#3b82f6',
+  no: '#ef4444',
+}
+
+const STATUS_LABEL: Record<AttendanceStatus, string> = {
+  yes: 'Going',
+  maybe: 'Maybe',
+  no: "Can't",
+  '': 'No reply',
+}
+
+const avatarColor = (status: AttendanceStatus) => (status ? STATUS_COLOR[status] : 'rgba(255,255,255,0.18)')
+
+const initials = (name: string) =>
+  name
+    .split(' ')
+    .map((part) => part[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase()
+
 const formatTimeInputLabel = (value: string) => {
   const [hourRaw, minuteRaw] = value.split(':')
   let hour = Number(hourRaw)
@@ -166,9 +188,6 @@ function App() {
   const [state, setState] = useState<AppState>(defaultState)
   const [activeTab, setActiveTab] = useState<Tab>('dashboard')
   const [isEditingDetails, setIsEditingDetails] = useState(false)
-  const [movieSearch, setMovieSearch] = useState('')
-  const [genreFilter, setGenreFilter] = useState('All')
-  const [sortMode, setSortMode] = useState<'popularity' | 'title'>('popularity')
   const [draftMovies, setDraftMovies] = useState<Record<string, string>>({})
   const [draggedMovie, setDraggedMovie] = useState<{ friendId: string; movieId: string } | null>(null)
   const [now, setNow] = useState(Date.now())
@@ -313,9 +332,6 @@ function App() {
     setState(nextState)
     setActiveTab('dashboard')
     setIsEditingDetails(false)
-    setMovieSearch('')
-    setGenreFilter('All')
-    setSortMode('popularity')
     setDraftMovies({})
     setDraggedMovie(null)
     setPickerResult('')
@@ -379,18 +395,10 @@ function App() {
     })
   }, [state.friends, state.movieVotes])
 
-  const filteredMovies = useMemo(() => {
-    const searched = movieMasterList.filter((movie) => {
-      const matchesSearch = movie.title.toLowerCase().includes(movieSearch.toLowerCase())
-      const matchesGenre = genreFilter === 'All' || movie.genre === genreFilter
-      return matchesSearch && matchesGenre
-    })
-
-    return searched.sort((a, b) => {
-      if (sortMode === 'title') return a.title.localeCompare(b.title)
-      return b.popularity - a.popularity
-    })
-  }, [genreFilter, movieMasterList, movieSearch, sortMode])
+  const sortedMovies = useMemo(
+    () => [...movieMasterList].sort((a, b) => b.popularity - a.popularity),
+    [movieMasterList],
+  )
 
   const attendanceStats = useMemo(() => {
     const yes = state.friends.filter((friend) => friend.status === 'yes')
@@ -415,12 +423,18 @@ function App() {
     }
   }, [state.friends])
 
+  const comments = useMemo(
+    () =>
+      state.friends
+        .filter((friend) => friend.comments.trim().length > 0)
+        .map((friend) => ({ id: friend.id, name: friend.name, status: friend.status, text: friend.comments.trim() })),
+    [state.friends],
+  )
+
   const topMovies = useMemo(
     () => [...movieMasterList].sort((a, b) => b.suggestedBy.length - a.suggestedBy.length).slice(0, 10),
     [movieMasterList],
   )
-
-  const genres = useMemo(() => ['All', ...new Set(movieMasterList.map((movie) => movie.genre))], [movieMasterList])
 
   const countdown = useMemo(() => {
     const target = new Date(`${state.details.date}T${state.details.plannedStartTime}:00`).getTime()
@@ -504,26 +518,26 @@ function App() {
             </p>
           ) : null}
 
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            <div className="info-pill">
-              <Film size={18} className="text-red-300" />
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+            <div className="hero-detail">
+              <span className="icon-wrap"><Film size={20} /></span>
               <div>
-                <p className="text-xs uppercase text-white/60">Movie Night Title</p>
-                <p className="font-medium">{state.details.title}</p>
+                <p className="label">Event</p>
+                <p className="value">{state.details.title}</p>
               </div>
             </div>
-            <div className="info-pill">
-              <CalendarDays size={18} className="text-red-300" />
+            <div className="hero-detail">
+              <span className="icon-wrap"><CalendarDays size={20} /></span>
               <div>
-                <p className="text-xs uppercase text-white/60">Date</p>
-                <p className="font-medium">{new Date(state.details.date).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+                <p className="label">Date</p>
+                <p className="value">{new Date(`${state.details.date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</p>
               </div>
             </div>
-            <div className="info-pill">
-              <Clock3 size={18} className="text-red-300" />
+            <div className="hero-detail">
+              <span className="icon-wrap"><Clock3 size={20} /></span>
               <div>
-                <p className="text-xs uppercase text-white/60">Planned Start Time</p>
-                <p className="font-medium">
+                <p className="label">Start Time</p>
+                <p className="value">
                   {new Date(`1970-01-01T${state.details.plannedStartTime}:00`).toLocaleTimeString([], {
                     hour: 'numeric',
                     minute: '2-digit',
@@ -531,20 +545,25 @@ function App() {
                 </p>
               </div>
             </div>
-            <div className="info-pill">
-              <House size={18} className="text-red-300" />
+            <div className="hero-detail">
+              <span className="icon-wrap"><House size={20} /></span>
               <div>
-                <p className="text-xs uppercase text-white/60">Location / Host</p>
-                <p className="font-medium">{state.details.location}</p>
-                <p className="text-xs text-white/70">Host: {state.details.host}</p>
+                <p className="label">Where</p>
+                <p className="value">{state.details.location}</p>
+                <p className="text-xs text-white/60">Host: {state.details.host}</p>
               </div>
             </div>
           </div>
 
-          <p className="mt-4 rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-white/80">{state.details.notes}</p>
-          <p className="mt-3 inline-flex items-center gap-2 rounded-full border border-red-400/40 bg-red-500/20 px-4 py-2 text-sm text-red-100">
-            <Sparkles size={16} /> {countdown}
-          </p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <span className="countdown-pill"><span className="dot" /> {countdown}</span>
+            {state.details.notes.trim() ? (
+              <p className="flex-1 min-w-64 rounded-xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm text-white/80">
+                <Sparkles size={14} className="mr-1.5 inline text-red-300" />
+                {state.details.notes}
+              </p>
+            ) : null}
+          </div>
 
           <AnimatePresence>
             {isEditingDetails ? (
@@ -585,6 +604,50 @@ function App() {
         <AnimatePresence mode="wait">
           {activeTab === 'dashboard' ? (
             <motion.section key="dashboard" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} className="space-y-6">
+              <section className="glass-card rounded-2xl border border-white/10 p-5">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="section-title mb-0">Who's Coming</h2>
+                  <div className="flex gap-2 text-sm font-semibold">
+                    <span className="status-chip chip-yes">{attendanceStats.yes} Going</span>
+                    <span className="status-chip chip-maybe">{attendanceStats.maybe} Maybe</span>
+                    <span className="status-chip chip-no">{attendanceStats.no} Can't</span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {state.friends.map((friend) => (
+                    <span
+                      key={friend.id}
+                      className={`status-chip ${friend.status ? `chip-${friend.status}` : 'chip-none'}`}
+                      title={STATUS_LABEL[friend.status]}
+                    >
+                      {friend.status === 'yes' ? '✅' : friend.status === 'maybe' ? '🤔' : friend.status === 'no' ? '❌' : '•'} {friend.name}
+                    </span>
+                  ))}
+                </div>
+              </section>
+
+              {comments.length ? (
+                <section className="glass-card rounded-2xl border border-white/10 p-5">
+                  <h2 className="section-title">💬 What People Said</h2>
+                  <div className="grid gap-2.5 sm:grid-cols-2">
+                    {comments.map((comment) => (
+                      <div key={comment.id} className="comment-row">
+                        <span className="comment-avatar" style={{ background: avatarColor(comment.status) }}>
+                          {initials(comment.name)}
+                        </span>
+                        <div className="min-w-0">
+                          <p className="font-semibold">
+                            {comment.name}
+                            <span className="ml-2 text-xs font-normal text-white/50">{STATUS_LABEL[comment.status]}</span>
+                          </p>
+                          <p className="text-sm text-white/80">{comment.text}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
               <section>
                 <h2 className="section-title">Attendance</h2>
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -598,26 +661,24 @@ function App() {
                       initial={{ opacity: 0, y: 10 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ delay: index * 0.03 }}
-                      className="glass-card rounded-2xl border border-white/10 p-4"
+                      className={`glass-card lift person-card rounded-2xl border border-white/10 p-4 ${friend.status ? `person-${friend.status}` : ''}`}
                     >
                       <h3 className="font-display text-xl">{friend.name}</h3>
                       <p className="mb-3 text-xs uppercase tracking-wide text-white/60">Attendance Status</p>
                       <div className="mb-3 grid grid-cols-3 gap-2">
                         {([
-                          ['yes', 'Yes'],
-                          ['maybe', 'Maybe'],
-                          ['no', 'No'],
-                        ] as const).map(([status, label]) => (
+                          ['yes', 'Yes', '✅'],
+                          ['maybe', 'Maybe', '🤔'],
+                          ['no', 'No', '❌'],
+                        ] as const).map(([status, label, emoji]) => (
                           <button
                             key={status}
                             type="button"
                             onClick={() => updateFriend(friend.id, (current) => ({ ...current, status }))}
-                            className={`rounded-xl px-2 py-2 text-sm font-semibold transition-all duration-200 ${friend.status === status
-                              ? 'scale-[1.04] border border-red-300/70 bg-red-500 text-white shadow-[0_10px_28px_rgba(239,68,68,0.35)] ring-2 ring-red-200/60'
-                              : 'border border-white/10 bg-white/5 text-white/70 hover:bg-white/10'
-                              }`}
+                            className={`status-btn status-btn-${status} ${friend.status === status ? 'status-btn-active' : ''}`}
                           >
-                              {status === 'yes' ? '✅' : status === 'maybe' ? '❓' : '❌'} {label}
+                            <span className="emoji">{emoji}</span>
+                            {label}
                           </button>
                         ))}
                       </div>
@@ -741,9 +802,9 @@ function App() {
                 <article className="glass-card rounded-2xl border border-white/10 p-5">
                   <h2 className="section-title">Attendance Summary</h2>
                   <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                    <div className="stat-block"><p>Yes</p><strong>{attendanceStats.yes}</strong></div>
-                    <div className="stat-block"><p>Maybe</p><strong>{attendanceStats.maybe}</strong></div>
-                    <div className="stat-block"><p>No</p><strong>{attendanceStats.no}</strong></div>
+                    <div className="stat-block tile-yes"><p>Going</p><strong>{attendanceStats.yes}</strong></div>
+                    <div className="stat-block tile-maybe"><p>Maybe</p><strong>{attendanceStats.maybe}</strong></div>
+                    <div className="stat-block tile-no"><p>Can't</p><strong>{attendanceStats.no}</strong></div>
                     <div className="stat-block"><p>Expected</p><strong>{attendanceStats.expectedGuests}</strong></div>
                   </div>
                   <div className="mt-4 space-y-1 text-sm text-white/80">
@@ -792,24 +853,16 @@ function App() {
             </motion.section>
           ) : (
             <motion.section key="voting" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -12 }} className="space-y-5">
-              <div className="glass-card flex flex-col gap-3 rounded-2xl border border-white/10 p-4 md:flex-row md:items-center">
-                <label className="relative flex-1">
-                  <Search size={16} className="pointer-events-none absolute left-3 top-3 text-white/60" />
-                  <input className="field pl-9" value={movieSearch} onChange={(event) => setMovieSearch(event.target.value)} placeholder="Search movies" />
-                </label>
-                <select className="field md:max-w-52" value={genreFilter} onChange={(event) => setGenreFilter(event.target.value)}>
-                  {genres.map((genre) => (
-                    <option key={genre} value={genre}>{genre}</option>
-                  ))}
-                </select>
-                <select className="field md:max-w-52" value={sortMode} onChange={(event) => setSortMode(event.target.value as 'popularity' | 'title')}>
-                  <option value="popularity">Sort by Popularity</option>
-                  <option value="title">Sort by Title</option>
-                </select>
+              <div className="glass-card rounded-2xl border border-white/10 p-4">
+                <p className="text-sm text-white/70">
+                  Vote on every movie below. Tap <span className="font-semibold text-emerald-300">👍 Want</span>,{' '}
+                  <span className="font-semibold text-rose-300">👎 Pass</span>, or{' '}
+                  <span className="font-semibold text-amber-300">⭐ Fav</span>. Most popular rise to the top.
+                </p>
               </div>
 
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                {filteredMovies.map((movie) => (
+                {sortedMovies.map((movie) => (
                   <article key={movie.key} className="glass-card overflow-hidden rounded-2xl border border-white/10">
                     <img
                       src={`https://dummyimage.com/420x560/111827/f3f4f6&text=${encodeURIComponent(movie.title)}`}
@@ -838,7 +891,7 @@ function App() {
               <article className="glass-card rounded-2xl border border-white/10 p-5">
                 <h2 className="section-title">Top 10 Ranked</h2>
                 <ol className="grid gap-2 sm:grid-cols-2">
-                  {filteredMovies.slice(0, 10).map((movie, index) => (
+                  {sortedMovies.slice(0, 10).map((movie, index) => (
                     <li key={movie.key} className="rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm">
                       <strong>#{index + 1} {movie.title}</strong>
                       <p className="text-xs text-white/65">Popularity {movie.popularity}</p>
