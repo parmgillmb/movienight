@@ -11,6 +11,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import Ambience from './Ambience'
 
 type AttendanceStatus = 'yes' | 'maybe' | 'no' | ''
 
@@ -360,6 +361,23 @@ function App() {
     [state.friends],
   )
 
+  // Each person's movie picks, favourites first, capped at 3 per person.
+  const moviePicks = useMemo(
+    () =>
+      state.friends
+        .filter((friend) => friend.movies.length > 0)
+        .map((friend) => ({
+          id: friend.id,
+          name: friend.name,
+          status: friend.status,
+          extra: Math.max(0, friend.movies.length - 3),
+          movies: [...friend.movies]
+            .sort((a, b) => Number(b.favorite) - Number(a.favorite))
+            .slice(0, 3),
+        })),
+    [state.friends],
+  )
+
   const countdown = useMemo(() => {
     const target = new Date(`${state.details.date}T${state.details.plannedStartTime}:00`).getTime()
     const diff = target - now
@@ -374,7 +392,9 @@ function App() {
   return (
     <div className="min-h-screen bg-canvas text-white">
       <div className="mesh-bg" aria-hidden="true" />
-      <main className="relative mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-6 lg:px-8">
+      <div className="aurora" aria-hidden="true" />
+      <Ambience />
+      <main className="relative z-10 mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-6 lg:px-8">
         <motion.header
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
@@ -503,6 +523,35 @@ function App() {
                   ))}
                 </div>
               </section>
+
+              {moviePicks.length ? (
+                <section className="glass-card rounded-2xl border border-white/10 p-5">
+                  <h2 className="section-title">🍿 Movie Picks</h2>
+                  <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+                    {moviePicks.map((person) => (
+                      <div key={person.id} className="pick-row">
+                        <div className="mb-2 flex items-center gap-2">
+                          <span className="comment-avatar" style={{ background: avatarColor(person.status) }}>
+                            {initials(person.name)}
+                          </span>
+                          <p className="font-semibold">{person.name}</p>
+                        </div>
+                        <ul className="space-y-1.5">
+                          {person.movies.map((movie) => (
+                            <li key={movie.id} className={`pick-item ${movie.favorite ? 'pick-fav' : ''}`}>
+                              {movie.favorite ? <Star size={14} fill="currentColor" className="shrink-0" /> : <Film size={14} className="shrink-0 opacity-60" />}
+                              <span className="truncate">{movie.title}</span>
+                            </li>
+                          ))}
+                        </ul>
+                        {person.extra > 0 ? (
+                          <p className="mt-1.5 text-xs text-white/50">+{person.extra} more</p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
 
               {comments.length ? (
                 <section className="glass-card rounded-2xl border border-white/10 p-5">
