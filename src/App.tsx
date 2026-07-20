@@ -178,6 +178,7 @@ function App() {
   const [syncStatus, setSyncStatus] = useState<'loading' | 'saved' | 'saving' | 'error'>('loading')
   const [syncMessage, setSyncMessage] = useState('')
   const lastSavedStateRef = useRef('')
+  const versionRef = useRef(0)
 
   // app is dark-only by design per user request
 
@@ -192,23 +193,27 @@ function App() {
           throw new Error(payload?.error ?? `Failed to load shared state: ${response.status}`)
         }
 
-        const remoteState = (await response.json()) as AppState
+        const payload = (await response.json()) as { state: AppState; version: number }
+        const remoteState = payload.state
         const serialized = JSON.stringify(remoteState)
 
         if (cancelled) return
 
+        versionRef.current = payload.version
         lastSavedStateRef.current = serialized
         setState(remoteState)
         setSyncStatus('saved')
         setSyncMessage('')
-      } catch {
+      } catch (error) {
         if (cancelled) return
 
         const serialized = JSON.stringify(defaultState)
         lastSavedStateRef.current = serialized
         setState(defaultState)
         setSyncStatus('error')
-        setSyncMessage('Shared cloud state is unavailable. Check that the Pages D1 binding is named DB and deployed.')
+        setSyncMessage(
+          error instanceof Error ? error.message : 'Shared cloud state is unavailable. Check /api/state for the backend error.',
+        )
       } finally {
         if (!cancelled) setIsLoaded(true)
       }
@@ -227,6 +232,10 @@ function App() {
     const serialized = JSON.stringify(state)
     if (serialized === lastSavedStateRef.current) return
 
+    // We never successfully loaded a version (initial GET failed), so we can't
+    // safely save without risking a blind overwrite. Keep the error banner.
+    if (versionRef.current < 1) return
+
     setSyncStatus('saving')
 
     const timeout = window.setTimeout(() => {
@@ -237,19 +246,38 @@ function App() {
             headers: {
               'Content-Type': 'application/json',
             },
-            body: serialized,
+            body: JSON.stringify({ state, version: versionRef.current }),
           })
+
+          if (response.status === 409) {
+            // Someone else saved first. Adopt their state so we don't clobber
+            // it, and surface a message — the local edits that lost are
+            // discarded (refresh-only, last-committed-wins semantics).
+            const payload = (await response.json().catch(() => null)) as
+              | { state?: AppState; version?: number }
+              | null
+            if (payload?.state && typeof payload.version === 'number') {
+              versionRef.current = payload.version
+              lastSavedStateRef.current = JSON.stringify(payload.state)
+              setState(payload.state)
+            }
+            setSyncStatus('error')
+            setSyncMessage('Someone else updated movie night while you were editing. Loaded their latest changes — please redo your edit.')
+            return
+          }
 
           if (!response.ok) {
             const payload = (await response.json().catch(() => null)) as { error?: string } | null
             throw new Error(payload?.error ?? `Failed to save shared state: ${response.status}`)
           }
 
+          const payload = (await response.json()) as { version: number }
+          versionRef.current = payload.version
           lastSavedStateRef.current = serialized
           setSyncStatus('saved')
           setSyncMessage('')
-        } catch {
-          setSyncMessage('Cloud save failed. Check the Pages Functions log for the exact backend error.')
+        } catch (error) {
+          setSyncMessage(error instanceof Error ? error.message : 'Cloud save failed. Check /api/state for the backend error.')
           setSyncStatus('error')
         }
       })()
