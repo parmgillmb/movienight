@@ -154,18 +154,25 @@ export default function Ambience() {
     let mouseY = window.innerHeight / 2
     let ringX = mouseX
     let ringY = mouseY
+    let lastTarget: Element | null = null
+    let dirty = true
 
+    // The move handler stays as cheap as possible: record the position and,
+    // only when the element under the pointer actually changes, re-test whether
+    // it is interactive. All DOM writes happen once per frame in follow().
     const onMove = (event: PointerEvent) => {
       mouseX = event.clientX
       mouseY = event.clientY
-      dot.style.transform = `translate3d(${mouseX}px, ${mouseY}px, 0) translate(-50%, -50%)`
+      dirty = true
 
-      // grow the ring over anything clickable
       const target = event.target as Element | null
-      const interactive = Boolean(
-        target?.closest('button, a, input, select, textarea, summary, [role="button"]'),
-      )
-      ring.classList.toggle('cursor-ring-active', interactive)
+      if (target !== lastTarget) {
+        lastTarget = target
+        const interactive = Boolean(
+          target?.closest('button, a, input, select, textarea, summary, [role="button"]'),
+        )
+        ring.classList.toggle('cursor-ring-active', interactive)
+      }
     }
 
     const onDown = () => ring.classList.add('cursor-ring-press')
@@ -175,12 +182,28 @@ export default function Ambience() {
     window.addEventListener('pointerdown', onDown)
     window.addEventListener('pointerup', onUp)
 
-    // the ring eases toward the pointer, giving it a trailing feel
+    // The dot tracks the pointer exactly; the ring eases in just behind it.
     let raf = 0
     const follow = () => {
-      ringX += (mouseX - ringX) * 0.18
-      ringY += (mouseY - ringY) * 0.18
-      ring.style.transform = `translate3d(${ringX}px, ${ringY}px, 0) translate(-50%, -50%)`
+      const dx = mouseX - ringX
+      const dy = mouseY - ringY
+
+      // Snap when close enough, otherwise ease. Keeps it tight, not floaty.
+      if (Math.abs(dx) < 0.1 && Math.abs(dy) < 0.1) {
+        ringX = mouseX
+        ringY = mouseY
+      } else {
+        ringX += dx * 0.35
+        ringY += dy * 0.35
+        dirty = true
+      }
+
+      if (dirty) {
+        dot.style.transform = `translate3d(${mouseX}px, ${mouseY}px, 0) translate(-50%, -50%)`
+        ring.style.transform = `translate3d(${ringX}px, ${ringY}px, 0) translate(-50%, -50%)`
+        dirty = false
+      }
+
       raf = window.requestAnimationFrame(follow)
     }
     raf = window.requestAnimationFrame(follow)

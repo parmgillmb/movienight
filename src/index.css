@@ -173,32 +173,6 @@ body {
   color: var(--text-main);
 }
 
-.vote-btn {
-  border-radius: 0.62rem;
-  border: 1px solid var(--panel-border);
-  background: rgba(255, 255, 255, 0.05);
-  padding: 0.46rem 0.45rem;
-  font-size: 0.78rem;
-  font-weight: 600;
-  transition: transform 0.15s ease, background-color 0.2s ease;
-}
-
-.vote-btn:hover {
-  transform: translateY(-1px);
-}
-
-.vote-positive {
-  background: rgba(16, 185, 129, 0.28);
-}
-
-.vote-negative {
-  background: rgba(239, 68, 68, 0.28);
-}
-
-.vote-favorite {
-  background: rgba(245, 158, 11, 0.3);
-}
-
 /* ============================================================
    Ambient background: aurora ribbons + starfield canvas
    ============================================================ */
@@ -253,6 +227,9 @@ body {
   pointer-events: none;
   border-radius: 999px;
   opacity: 0;
+  /* Promote to their own layer so per-frame transforms never touch layout */
+  will-change: transform;
+  contain: layout style paint;
 }
 
 body.custom-cursor-on .cursor-ring,
@@ -266,25 +243,33 @@ body.custom-cursor-on * {
   cursor: none !important;
 }
 
+/* The ring itself is only moved by JS (transform). Its visible circle is a
+   child pseudo-element that scales, so hover/press states animate on the
+   compositor and never trigger layout. */
 .cursor-ring {
   width: 34px;
   height: 34px;
-  border: 1.5px solid color-mix(in srgb, var(--accent) 70%, white 30%);
-  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 45%, transparent);
-  transition: width 0.18s ease, height 0.18s ease, border-color 0.18s ease,
-    background-color 0.18s ease, opacity 0.2s ease;
 }
 
-.cursor-ring-active {
-  width: 52px;
-  height: 52px;
+.cursor-ring::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 70%, white 30%);
+  box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 45%, transparent);
+  transition: transform 0.16s ease, border-color 0.16s ease, background-color 0.16s ease;
+  will-change: transform;
+}
+
+.cursor-ring-active::after {
+  transform: scale(1.5);
   background: color-mix(in srgb, var(--accent) 16%, transparent);
   border-color: color-mix(in srgb, var(--accent) 90%, white 10%);
 }
 
-.cursor-ring-press {
-  width: 26px;
-  height: 26px;
+.cursor-ring-press::after {
+  transform: scale(0.78);
   background: color-mix(in srgb, var(--accent) 32%, transparent);
 }
 
@@ -293,6 +278,24 @@ body.custom-cursor-on * {
   height: 6px;
   background: color-mix(in srgb, var(--accent) 40%, white);
   box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 70%, transparent);
+}
+
+/* PIN input shakes on a wrong entry */
+.pin-error {
+  border-color: color-mix(in srgb, var(--no) 70%, transparent) !important;
+  animation: pin-shake 0.32s ease;
+}
+@keyframes pin-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-7px); }
+  40% { transform: translateX(7px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pin-error {
+    animation: none;
+  }
 }
 
 /* ============================================================

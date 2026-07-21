@@ -5,6 +5,7 @@ import {
   Edit3,
   Film,
   House,
+  Lock,
   Plus,
   Sparkles,
   Star,
@@ -70,6 +71,10 @@ const createId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2)
+
+// Note: this is a convenience gate, not real security — the PIN ships in the
+// client bundle. It stops accidental edits, not a determined visitor.
+const ADMIN_PIN = '5280'
 
 const STATUS_COLOR: Record<Exclude<AttendanceStatus, ''>, string> = {
   yes: '#22c55e',
@@ -156,6 +161,12 @@ const defaultState: AppState = createDefaultState()
 function App() {
   const [state, setState] = useState<AppState>(defaultState)
   const [isEditingDetails, setIsEditingDetails] = useState(false)
+  // Unlocked for the rest of the session once the PIN is entered.
+  const [isUnlocked, setIsUnlocked] = useState(false)
+  // Which action the PIN prompt is currently gating, if any.
+  const [pinPrompt, setPinPrompt] = useState<'edit' | 'reset' | null>(null)
+  const [pinInput, setPinInput] = useState('')
+  const [pinError, setPinError] = useState(false)
   const [draftMovies, setDraftMovies] = useState<Record<string, string>>({})
   const [draggedMovie, setDraggedMovie] = useState<{ friendId: string; movieId: string } | null>(null)
   // Unconfirmed status picks live only in local state; they sync to everyone
@@ -330,6 +341,33 @@ function App() {
     setDraggedMovie(null)
   }
 
+  // Run a protected action, prompting for the PIN first if still locked.
+  const requestUnlock = (action: 'edit' | 'reset') => {
+    if (isUnlocked) {
+      if (action === 'edit') setIsEditingDetails((prev) => !prev)
+      else resetAll()
+      return
+    }
+    setPinInput('')
+    setPinError(false)
+    setPinPrompt(action)
+  }
+
+  const submitPin = () => {
+    if (pinInput !== ADMIN_PIN) {
+      setPinError(true)
+      setPinInput('')
+      return
+    }
+    const action = pinPrompt
+    setIsUnlocked(true)
+    setPinPrompt(null)
+    setPinInput('')
+    setPinError(false)
+    if (action === 'edit') setIsEditingDetails(true)
+    else if (action === 'reset') resetAll()
+  }
+
   const attendanceStats = useMemo(() => {
     const yes = state.friends.filter((friend) => friend.status === 'yes')
     const maybe = state.friends.filter((friend) => friend.status === 'maybe')
@@ -408,11 +446,11 @@ function App() {
               </span>
               <button
                 type="button"
-                onClick={() => setIsEditingDetails((prev) => !prev)}
+                onClick={() => requestUnlock('edit')}
                 className="rounded-xl bg-red-500/90 px-3 py-2 text-sm font-semibold transition hover:bg-red-400"
               >
                 <span className="inline-flex items-center gap-2">
-                  <Edit3 size={16} /> Edit Details
+                  {isUnlocked ? <Edit3 size={16} /> : <Lock size={16} />} Edit Details
                 </span>
               </button>
             </div>
@@ -744,14 +782,85 @@ function App() {
               <section className="mt-8 flex justify-end">
                 <button
                   type="button"
-                  onClick={resetAll}
-                  className="rounded-2xl border border-red-300/30 bg-red-500/15 px-5 py-3 text-sm font-semibold text-red-100 transition hover:bg-red-500/25 hover:text-white"
+                  onClick={() => requestUnlock('reset')}
+                  className="inline-flex items-center gap-2 rounded-2xl border border-red-300/30 bg-red-500/15 px-5 py-3 text-sm font-semibold text-red-100 transition hover:bg-red-500/25 hover:text-white"
                 >
-                  Reset Everything
+                  {isUnlocked ? null : <Lock size={14} />} Reset Everything
                 </button>
               </section>
         </motion.section>
       </main>
+
+      <AnimatePresence>
+        {pinPrompt ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+            onClick={() => setPinPrompt(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              onClick={(event) => event.stopPropagation()}
+              className="glass-card w-full max-w-sm rounded-3xl border border-white/15 p-6 shadow-2xl"
+            >
+              <div className="mb-4 flex items-center gap-3">
+                <span className="grid h-11 w-11 place-items-center rounded-2xl bg-red-500/20 text-red-200">
+                  <Lock size={20} />
+                </span>
+                <div>
+                  <h2 className="font-display text-xl leading-tight">Enter PIN</h2>
+                  <p className="text-xs text-white/60">
+                    {pinPrompt === 'reset' ? 'Required to reset everything' : 'Required to edit the details'}
+                  </p>
+                </div>
+              </div>
+
+              <input
+                className={`field text-center text-2xl tracking-[0.5em] ${pinError ? 'pin-error' : ''}`}
+                type="password"
+                inputMode="numeric"
+                autoFocus
+                maxLength={4}
+                value={pinInput}
+                onChange={(event) => {
+                  setPinInput(event.target.value.replace(/\D/g, ''))
+                  setPinError(false)
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') submitPin()
+                  if (event.key === 'Escape') setPinPrompt(null)
+                }}
+                placeholder="••••"
+              />
+
+              {pinError ? (
+                <p className="mt-2 text-center text-sm font-semibold text-rose-300">Wrong PIN, try again</p>
+              ) : null}
+
+              <div className="mt-4 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPinPrompt(null)}
+                  className="rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white/80 transition hover:bg-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={submitPin}
+                  className="rounded-xl bg-red-500/90 px-4 py-2.5 text-sm font-semibold transition hover:bg-red-400"
+                >
+                  Unlock
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
     </div>
   )
 }
