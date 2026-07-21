@@ -1,4 +1,4 @@
-const FRIENDS = ['Nik', 'Sebastian', 'Mattias', 'Robbie', 'Ethan', 'Cam', 'Parmeet', 'Raph', 'Aiden']
+const FRIENDS = ['Nik', 'Sebastien', 'Mattias', 'Robbie', 'Ethan', 'Cam', 'Parmeet', 'Raph', 'Aiden']
 
 const DEFAULT_DETAILS = {
   title: 'Movie Night #12',

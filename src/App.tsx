@@ -65,7 +65,7 @@ const generateArrivalOptions = () => {
 }
 const ARRIVAL_OPTIONS = generateArrivalOptions()
 
-const FRIENDS = ['Nik', 'Sebastian', 'Mattias', 'Robbie', 'Ethan', 'Cam', 'Parmeet', 'Raph', 'Aiden']
+const FRIENDS = ['Nik', 'Sebastien', 'Mattias', 'Robbie', 'Ethan', 'Cam', 'Parmeet', 'Raph', 'Aiden']
 
 const createId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
