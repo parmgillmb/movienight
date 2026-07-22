@@ -125,7 +125,7 @@ const formatTimestamp = (ms: number) =>
   })
 
 // Build an .ics calendar file for the event (2-hour default duration).
-const buildIcsDataUrl = (details: MovieNightDetails) => {
+const buildIcsText = (details: MovieNightDetails) => {
   const start = new Date(`${details.date}T${details.plannedStartTime}:00`)
   const end = new Date(start.getTime() + 2 * 60 * 60 * 1000)
   const fmt = (d: Date) =>
@@ -148,7 +148,48 @@ const buildIcsDataUrl = (details: MovieNightDetails) => {
     'END:VEVENT',
     'END:VCALENDAR',
   ]
-  return `data:text/calendar;charset=utf-8,${encodeURIComponent(lines.join('\r\n'))}`
+  return lines.join('\r\n')
+}
+
+const icsFileName = (details: MovieNightDetails) =>
+  `${details.title.replace(/[^\w]+/g, '-') || 'movie-night'}.ics`
+
+// Hand the .ics to the OS the best way each platform supports. On phones we
+// prefer the native share sheet (which shows an "Add to Calendar" option);
+// everywhere else we download via a Blob object URL, which mobile browsers
+// handle far more reliably than a data: URL.
+const saveCalendarEvent = async (details: MovieNightDetails) => {
+  const text = buildIcsText(details)
+  const fileName = icsFileName(details)
+  const file = new File([text], fileName, { type: 'text/calendar' })
+
+  // Try the native share sheet first (great on iOS/Android).
+  const nav = navigator as Navigator & {
+    canShare?: (data: { files: File[] }) => boolean
+    share?: (data: { files?: File[]; title?: string; text?: string }) => Promise<void>
+  }
+  if (nav.share && nav.canShare?.({ files: [file] })) {
+    try {
+      await nav.share({ files: [file], title: details.title, text: `Add ${details.title} to your calendar` })
+      return
+    } catch (error) {
+      // User cancelled the share sheet — that's fine, don't fall through.
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      // Any other failure: fall through to the download path.
+    }
+  }
+
+  // Blob download fallback.
+  const url = URL.createObjectURL(new Blob([text], { type: 'text/calendar;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = fileName
+  link.rel = 'noopener'
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  // Revoke after a tick so the download has started.
+  window.setTimeout(() => URL.revokeObjectURL(url), 4000)
 }
 
 const buildInviteText = (details: MovieNightDetails) => {
@@ -729,15 +770,15 @@ function App() {
                   {copiedInvite ? 'Copied!' : 'Invite'}
                 </span>
               </button>
-              <a
-                href={buildIcsDataUrl(state.details)}
-                download={`${state.details.title.replace(/[^\w]+/g, '-') || 'movie-night'}.ics`}
+              <button
+                type="button"
+                onClick={() => void saveCalendarEvent(state.details)}
                 className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold transition hover:bg-white/10"
               >
                 <span className="inline-flex items-center gap-2">
                   <CalendarPlus size={16} /> Add to Calendar
                 </span>
-              </a>
+              </button>
               <button
                 type="button"
                 onClick={() => requestUnlock('edit')}
