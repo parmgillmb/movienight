@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   CalendarDays,
+  Camera,
   Clock3,
   Edit3,
   Film,
@@ -29,6 +30,7 @@ type Friend = {
   arrivalTime: string
   comments: string
   movies: MovieSuggestion[]
+  avatarUrl?: string // small downscaled data URL, stored in shared state
 }
 
 type MovieNightDetails = {
@@ -63,7 +65,7 @@ type EventArchive = {
   id: string
   archivedAt: number
   details: MovieNightDetails
-  attendees: { name: string; status: AttendanceStatus; arrivalTime: string; comments: string }[]
+  attendees: { name: string; status: AttendanceStatus; arrivalTime: string; comments: string; avatarUrl?: string }[]
 }
 
 type AppState = {
@@ -117,6 +119,48 @@ const formatTimestamp = (ms: number) =>
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+  })
+
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 // 10MB
+const AVATAR_SIZE = 256 // px, square
+
+// Read an image file and return a small square JPEG data URL. We accept files
+// up to 10MB but downscale to AVATAR_SIZE so only a few KB land in D1.
+const fileToAvatarDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) {
+      reject(new Error('That file is not an image.'))
+      return
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      reject(new Error('Image is larger than 10MB.'))
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onerror = () => reject(new Error('Could not read that file.'))
+    reader.onload = () => {
+      const img = new Image()
+      img.onerror = () => reject(new Error('Could not decode that image.'))
+      img.onload = () => {
+        const canvas = document.createElement('canvas')
+        canvas.width = AVATAR_SIZE
+        canvas.height = AVATAR_SIZE
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          reject(new Error('Canvas not supported.'))
+          return
+        }
+        // center-crop to a square, then draw scaled down
+        const side = Math.min(img.width, img.height)
+        const sx = (img.width - side) / 2
+        const sy = (img.height - side) / 2
+        ctx.drawImage(img, sx, sy, side, side, 0, 0, AVATAR_SIZE, AVATAR_SIZE)
+        resolve(canvas.toDataURL('image/jpeg', 0.82))
+      }
+      img.src = reader.result as string
+    }
+    reader.readAsDataURL(file)
   })
 
 const initials = (name: string) =>
@@ -188,6 +232,36 @@ const createDefaultState = (): AppState => ({
 
 const defaultState: AppState = createDefaultState()
 
+// Shows a friend's photo if they have one, else colored initials.
+function Avatar({
+  name,
+  status,
+  avatarUrl,
+  size = 40,
+}: {
+  name: string
+  status: AttendanceStatus
+  avatarUrl?: string
+  size?: number
+}) {
+  const style = { width: size, height: size, fontSize: size * 0.36 }
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt={name}
+        className="avatar-img"
+        style={{ ...style, borderColor: avatarColor(status) }}
+      />
+    )
+  }
+  return (
+    <span className="comment-avatar" style={{ ...style, background: avatarColor(status) }}>
+      {initials(name)}
+    </span>
+  )
+}
+
 function App() {
   const [state, setState] = useState<AppState>(defaultState)
   const [isEditingDetails, setIsEditingDetails] = useState(false)
@@ -198,6 +272,9 @@ function App() {
   const [pinPrompt, setPinPrompt] = useState<'edit' | 'reset' | null>(null)
   const [pinInput, setPinInput] = useState('')
   const [pinError, setPinError] = useState(false)
+  // Reset asks for a final confirmation even after the PIN is entered.
+  const [confirmReset, setConfirmReset] = useState(false)
+  const [avatarError, setAvatarError] = useState('')
   const [draftMovies, setDraftMovies] = useState<Record<string, string>>({})
   const [draggedMovie, setDraggedMovie] = useState<{ friendId: string; movieId: string } | null>(null)
   // Unconfirmed status picks live only in local state; they sync to everyone
@@ -350,6 +427,7 @@ function App() {
           status: friend.status,
           arrivalTime: friend.arrivalTime,
           comments: friend.comments,
+          avatarUrl: friend.avatarUrl,
         })),
       }
       return { ...prev, archives: [archive, ...prev.archives] }
@@ -361,6 +439,17 @@ function App() {
       ...prev,
       friends: prev.friends.map((friend) => (friend.id === friendId ? updater(friend) : friend)),
     }))
+  }
+
+  const handleAvatarUpload = async (friendId: string, file: File | undefined) => {
+    if (!file) return
+    try {
+      const dataUrl = await fileToAvatarDataUrl(file)
+      updateFriend(friendId, (current) => ({ ...current, avatarUrl: dataUrl }))
+      setAvatarError('')
+    } catch (error) {
+      setAvatarError(error instanceof Error ? error.message : 'Upload failed.')
+    }
   }
 
   // Append entries to the shared activity log (most recent first, capped).
@@ -441,7 +530,8 @@ function App() {
 
   const resetAll = () => {
     // Keep all hero details (title, date, time, location, host, notes) exactly
-    // as they are; only clear each person's attendance and comments.
+    // as they are; clear each person's attendance/comments and the activity log.
+    // Profile pictures and archived past events are preserved.
     setState((prev) => ({
       ...prev,
       friends: prev.friends.map((friend) => ({
@@ -451,20 +541,30 @@ function App() {
         comments: '',
         movies: friend.movies,
       })),
+      activityLog: [],
     }))
     setPendingStatus({})
     setIsEditingDetails(false)
     setDraftMovies({})
     setDraggedMovie(null)
+    setConfirmReset(false)
+  }
+
+  // Reset requires a final confirmation on top of the PIN, since it wipes
+  // everyone's answers and the activity log.
+  const startEditOrReset = (action: 'edit' | 'reset') => {
+    if (action === 'edit') {
+      if (isEditingDetails) closeDetailsEditing()
+      else openDetailsEditing()
+    } else {
+      setConfirmReset(true)
+    }
   }
 
   // Run a protected action, prompting for the PIN first if still locked.
   const requestUnlock = (action: 'edit' | 'reset') => {
     if (isUnlocked) {
-      if (action === 'edit') {
-        if (isEditingDetails) closeDetailsEditing()
-        else openDetailsEditing()
-      } else resetAll()
+      startEditOrReset(action)
       return
     }
     setPinInput('')
@@ -483,8 +583,8 @@ function App() {
     setPinPrompt(null)
     setPinInput('')
     setPinError(false)
-    if (action === 'edit') openDetailsEditing()
-    else if (action === 'reset') resetAll()
+    if (action === 'edit') startEditOrReset('edit')
+    else if (action === 'reset') startEditOrReset('reset')
   }
 
   const attendanceStats = useMemo(() => {
@@ -514,7 +614,7 @@ function App() {
     () =>
       state.friends
         .filter((friend) => friend.comments.trim().length > 0)
-        .map((friend) => ({ id: friend.id, name: friend.name, status: friend.status, text: friend.comments.trim() })),
+        .map((friend) => ({ id: friend.id, name: friend.name, status: friend.status, avatarUrl: friend.avatarUrl, text: friend.comments.trim() })),
     [state.friends],
   )
 
@@ -527,6 +627,7 @@ function App() {
           id: friend.id,
           name: friend.name,
           status: friend.status,
+          avatarUrl: friend.avatarUrl,
           extra: Math.max(0, friend.movies.length - 3),
           movies: [...friend.movies]
             .sort((a, b) => Number(b.favorite) - Number(a.favorite))
@@ -578,6 +679,13 @@ function App() {
           {syncStatus === 'error' && syncMessage ? (
             <p className="mt-3 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
               {syncMessage}
+            </p>
+          ) : null}
+
+          {avatarError ? (
+            <p className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+              <span>{avatarError}</span>
+              <button type="button" onClick={() => setAvatarError('')} className="text-amber-200/70 hover:text-white">✕</button>
             </p>
           ) : null}
 
@@ -706,9 +814,7 @@ function App() {
                     {moviePicks.map((person) => (
                       <div key={person.id} className="pick-row">
                         <div className="mb-2 flex items-center gap-2">
-                          <span className="comment-avatar" style={{ background: avatarColor(person.status) }}>
-                            {initials(person.name)}
-                          </span>
+                          <Avatar name={person.name} status={person.status} avatarUrl={person.avatarUrl} size={36} />
                           <p className="font-semibold">{person.name}</p>
                         </div>
                         <ul className="space-y-1.5">
@@ -734,9 +840,7 @@ function App() {
                   <div className="grid gap-2.5 sm:grid-cols-2">
                     {comments.map((comment) => (
                       <div key={comment.id} className="comment-row">
-                        <span className="comment-avatar" style={{ background: avatarColor(comment.status) }}>
-                          {initials(comment.name)}
-                        </span>
+                        <Avatar name={comment.name} status={comment.status} avatarUrl={comment.avatarUrl} size={36} />
                         <div className="min-w-0">
                           <p className="font-semibold">
                             {comment.name}
@@ -768,7 +872,35 @@ function App() {
                       transition={{ delay: index * 0.03 }}
                       className={`glass-card lift person-card rounded-2xl border border-white/10 p-4 ${friend.status ? `person-${friend.status}` : ''}`}
                     >
-                      <h3 className="font-display text-xl">{friend.name}</h3>
+                      <div className="mb-3 flex items-center gap-3">
+                        <label className="avatar-upload" title="Upload a profile picture (max 10MB)">
+                          <Avatar name={friend.name} status={friend.status} avatarUrl={friend.avatarUrl} size={52} />
+                          <span className="avatar-upload-badge"><Camera size={13} /></span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(event) => {
+                              void handleAvatarUpload(friend.id, event.target.files?.[0])
+                              event.target.value = ''
+                            }}
+                          />
+                        </label>
+                        <div className="min-w-0">
+                          <h3 className="font-display text-xl leading-tight">{friend.name}</h3>
+                          {friend.avatarUrl ? (
+                            <button
+                              type="button"
+                              onClick={() => updateFriend(friend.id, (current) => ({ ...current, avatarUrl: undefined }))}
+                              className="text-xs text-white/50 underline-offset-2 hover:text-white/80 hover:underline"
+                            >
+                              Remove photo
+                            </button>
+                          ) : (
+                            <p className="text-xs text-white/45">Tap the circle to add a photo</p>
+                          )}
+                        </div>
+                      </div>
                       <p className="mb-3 text-xs uppercase tracking-wide text-white/60">Attendance Status</p>
                       <div className="mb-3 grid grid-cols-3 gap-2">
                         {([
@@ -1000,7 +1132,10 @@ function App() {
                       {archive.attendees.map((attendee) => (
                         <div key={attendee.name} className={`archive-person ${attendee.status ? `person-${attendee.status}` : ''}`}>
                           <div className="flex items-center justify-between gap-2">
-                            <span className="font-semibold">{attendee.name}</span>
+                            <span className="flex items-center gap-2 font-semibold">
+                              <Avatar name={attendee.name} status={attendee.status} avatarUrl={attendee.avatarUrl} size={28} />
+                              {attendee.name}
+                            </span>
                             <span className={`status-chip ${attendee.status ? `chip-${attendee.status}` : 'chip-none'}`}>
                               {STATUS_LABEL[attendee.status]}
                             </span>
@@ -1018,6 +1153,47 @@ function App() {
           </motion.section>
         ) : null}
       </main>
+
+      <AnimatePresence>
+        {confirmReset ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+            onClick={() => setConfirmReset(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              onClick={(event) => event.stopPropagation()}
+              className="glass-card w-full max-w-sm rounded-3xl border border-white/15 p-6 shadow-2xl"
+            >
+              <h2 className="font-display text-xl">Reset everything?</h2>
+              <p className="mt-2 text-sm text-white/70">
+                This clears everyone's attendance, comments, and the activity log. Profile pictures and past events are kept. This can't be undone.
+              </p>
+              <div className="mt-5 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmReset(false)}
+                  className="rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white/80 transition hover:bg-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={resetAll}
+                  className="rounded-xl bg-red-500/90 px-4 py-2.5 text-sm font-semibold transition hover:bg-red-400"
+                >
+                  Yes, reset
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <AnimatePresence>
         {pinPrompt ? (
