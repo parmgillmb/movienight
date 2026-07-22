@@ -299,6 +299,40 @@ body.custom-cursor-on * {
 }
 
 /* ============================================================
+   Activity log + archive
+   ============================================================ */
+.log-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  border-radius: 0.75rem;
+  border: 1px solid var(--panel-border);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 0.6rem 0.85rem;
+}
+.log-dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.log-dot-status {
+  background: var(--yes);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--yes) 60%, transparent);
+}
+.log-dot-details {
+  background: var(--accent);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.archive-person {
+  border-radius: 0.75rem;
+  border: 1px solid var(--panel-border);
+  border-left: 4px solid var(--panel-border);
+  background: rgba(0, 0, 0, 0.2);
+  padding: 0.6rem 0.8rem;
+}
+
+/* ============================================================
    Movie picks digest
    ============================================================ */
 .pick-row {

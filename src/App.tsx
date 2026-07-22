@@ -48,10 +48,30 @@ type MovieVote = {
   favorite: boolean
 }
 
+// An entry in the shared activity log.
+type LogEntry = {
+  id: string
+  at: number // epoch ms
+  kind: 'status' | 'details'
+  who: string // person name, or the field label for details edits
+  from: string
+  to: string
+}
+
+// A frozen record of one event, snapshotted at start time.
+type EventArchive = {
+  id: string
+  archivedAt: number
+  details: MovieNightDetails
+  attendees: { name: string; status: AttendanceStatus; arrivalTime: string; comments: string }[]
+}
+
 type AppState = {
   details: MovieNightDetails
   friends: Friend[]
   movieVotes: Record<string, MovieVote>
+  activityLog: LogEntry[]
+  archives: EventArchive[]
 }
 
 const generateArrivalOptions = () => {
@@ -90,6 +110,14 @@ const STATUS_LABEL: Record<AttendanceStatus, string> = {
 }
 
 const avatarColor = (status: AttendanceStatus) => (status ? STATUS_COLOR[status] : 'rgba(255,255,255,0.18)')
+
+const formatTimestamp = (ms: number) =>
+  new Date(ms).toLocaleString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
 
 const initials = (name: string) =>
   name
@@ -154,6 +182,8 @@ const createDefaultState = (): AppState => ({
   details: { ...DEFAULT_DETAILS },
   friends: createDefaultFriends(DEFAULT_DETAILS.plannedStartTime),
   movieVotes: {},
+  activityLog: [],
+  archives: [],
 })
 
 const defaultState: AppState = createDefaultState()
@@ -161,6 +191,7 @@ const defaultState: AppState = createDefaultState()
 function App() {
   const [state, setState] = useState<AppState>(defaultState)
   const [isEditingDetails, setIsEditingDetails] = useState(false)
+  const [view, setView] = useState<'dashboard' | 'log' | 'archive'>('dashboard')
   // Unlocked for the rest of the session once the PIN is entered.
   const [isUnlocked, setIsUnlocked] = useState(false)
   // Which action the PIN prompt is currently gating, if any.
@@ -178,6 +209,8 @@ function App() {
   const [syncMessage, setSyncMessage] = useState('')
   const lastSavedStateRef = useRef('')
   const versionRef = useRef(0)
+  // Snapshot of details taken when the edit panel opens, to diff on close.
+  const detailsSnapshotRef = useRef<MovieNightDetails | null>(null)
 
   // app is dark-only by design per user request
 
@@ -193,7 +226,12 @@ function App() {
         }
 
         const payload = (await response.json()) as { state: AppState; version: number }
-        const remoteState = payload.state
+        // Older DB rows predate these arrays; default them so the app is safe.
+        const remoteState: AppState = {
+          ...payload.state,
+          activityLog: payload.state.activityLog ?? [],
+          archives: payload.state.archives ?? [],
+        }
         const serialized = JSON.stringify(remoteState)
 
         if (cancelled) return
@@ -290,11 +328,86 @@ function App() {
     return () => window.clearInterval(timer)
   }, [])
 
+  // Once the event's start time passes, snapshot it into the archive exactly
+  // once. The archive id encodes the event so re-editing details later (a new
+  // event) archives separately, but the same event never double-archives.
+  useEffect(() => {
+    if (!isLoaded) return
+    const startMs = new Date(`${state.details.date}T${state.details.plannedStartTime}:00`).getTime()
+    if (Number.isNaN(startMs) || now < startMs) return
+
+    const eventId = `${state.details.date}|${state.details.plannedStartTime}|${state.details.title}`
+    if (state.archives.some((archive) => archive.id === eventId)) return
+
+    setState((prev) => {
+      if (prev.archives.some((archive) => archive.id === eventId)) return prev
+      const archive: EventArchive = {
+        id: eventId,
+        archivedAt: Date.now(),
+        details: { ...prev.details },
+        attendees: prev.friends.map((friend) => ({
+          name: friend.name,
+          status: friend.status,
+          arrivalTime: friend.arrivalTime,
+          comments: friend.comments,
+        })),
+      }
+      return { ...prev, archives: [archive, ...prev.archives] }
+    })
+  }, [isLoaded, now, state.details, state.archives, state.friends])
+
   const updateFriend = (friendId: string, updater: (friend: Friend) => Friend) => {
     setState((prev) => ({
       ...prev,
       friends: prev.friends.map((friend) => (friend.id === friendId ? updater(friend) : friend)),
     }))
+  }
+
+  // Append entries to the shared activity log (most recent first, capped).
+  const pushLog = (entries: Omit<LogEntry, 'id' | 'at'>[]) => {
+    if (!entries.length) return
+    const now = Date.now()
+    const stamped: LogEntry[] = entries.map((entry, index) => ({
+      ...entry,
+      id: createId(),
+      at: now + index, // keep insertion order stable within one batch
+    }))
+    setState((prev) => ({
+      ...prev,
+      activityLog: [...stamped.reverse(), ...(prev.activityLog ?? [])].slice(0, 200),
+    }))
+  }
+
+  const DETAIL_LABELS: Record<keyof MovieNightDetails, string> = {
+    title: 'Title',
+    date: 'Date',
+    plannedStartTime: 'Start time',
+    location: 'Location',
+    host: 'Host',
+    notes: 'Notes',
+  }
+
+  const openDetailsEditing = () => {
+    detailsSnapshotRef.current = { ...state.details }
+    setIsEditingDetails(true)
+  }
+
+  // Diff details against the snapshot from when editing opened and log changes.
+  const closeDetailsEditing = () => {
+    const before = detailsSnapshotRef.current
+    if (before) {
+      const changes = (Object.keys(DETAIL_LABELS) as (keyof MovieNightDetails)[])
+        .filter((key) => before[key] !== state.details[key])
+        .map((key) => ({
+          kind: 'details' as const,
+          who: DETAIL_LABELS[key],
+          from: before[key] || '(empty)',
+          to: state.details[key] || '(empty)',
+        }))
+      pushLog(changes)
+    }
+    detailsSnapshotRef.current = null
+    setIsEditingDetails(false)
   }
 
   const defaultArrivalLabel = formatTimeInputLabel(state.details.plannedStartTime)
@@ -314,6 +427,10 @@ function App() {
   // Confirm locks the pending pick into the synced state for everyone to see.
   const confirmStatus = (friendId: string) => {
     const next = pendingStatus[friendId] ?? ''
+    const friend = state.friends.find((item) => item.id === friendId)
+    if (friend && friend.status !== next) {
+      pushLog([{ kind: 'status', who: friend.name, from: STATUS_LABEL[friend.status], to: STATUS_LABEL[next] }])
+    }
     updateFriend(friendId, (current) => ({ ...current, status: next }))
     setPendingStatus((prev) => {
       const clone = { ...prev }
@@ -344,8 +461,10 @@ function App() {
   // Run a protected action, prompting for the PIN first if still locked.
   const requestUnlock = (action: 'edit' | 'reset') => {
     if (isUnlocked) {
-      if (action === 'edit') setIsEditingDetails((prev) => !prev)
-      else resetAll()
+      if (action === 'edit') {
+        if (isEditingDetails) closeDetailsEditing()
+        else openDetailsEditing()
+      } else resetAll()
       return
     }
     setPinInput('')
@@ -364,7 +483,7 @@ function App() {
     setPinPrompt(null)
     setPinInput('')
     setPinError(false)
-    if (action === 'edit') setIsEditingDetails(true)
+    if (action === 'edit') openDetailsEditing()
     else if (action === 'reset') resetAll()
   }
 
@@ -539,7 +658,25 @@ function App() {
           </AnimatePresence>
         </motion.header>
 
-        <motion.section initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+        <div className="mb-6 flex gap-2 rounded-2xl border border-white/10 bg-black/20 p-1.5 backdrop-blur">
+          {([
+            ['dashboard', 'Dashboard'],
+            ['log', `Activity Log${state.activityLog.length ? ` (${state.activityLog.length})` : ''}`],
+            ['archive', `Past Events${state.archives.length ? ` (${state.archives.length})` : ''}`],
+          ] as const).map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setView(key)}
+              className={`tab-btn ${view === key ? 'tab-btn-active' : ''}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {view === 'dashboard' ? (
+        <motion.section key="dashboard" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
               <section className="glass-card rounded-2xl border border-white/10 p-5">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <h2 className="section-title mb-0">Who's Coming</h2>
@@ -789,6 +926,97 @@ function App() {
                 </button>
               </section>
         </motion.section>
+        ) : null}
+
+        {view === 'log' ? (
+          <motion.section key="log" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-card rounded-2xl border border-white/10 p-5">
+            <h2 className="section-title">📝 Activity Log</h2>
+            <p className="mb-4 text-sm text-white/60">Every attendance change and detail edit, newest first.</p>
+            {state.activityLog.length === 0 ? (
+              <p className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-white/60">
+                No activity yet. Changes to attendance or event details will show up here.
+              </p>
+            ) : (
+              <ul className="space-y-2">
+                {state.activityLog.map((entry) => (
+                  <li key={entry.id} className="log-row">
+                    <span className={`log-dot ${entry.kind === 'status' ? 'log-dot-status' : 'log-dot-details'}`} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm">
+                        {entry.kind === 'status' ? (
+                          <>
+                            <span className="font-semibold">{entry.who}</span> changed attendance{' '}
+                            <span className="text-white/60">{entry.from}</span>
+                            <span className="mx-1 text-white/40">→</span>
+                            <span className="font-semibold text-white">{entry.to}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-semibold">{entry.who}</span> updated{' '}
+                            <span className="text-white/60 line-through">{entry.from}</span>
+                            <span className="mx-1 text-white/40">→</span>
+                            <span className="font-semibold text-white">{entry.to}</span>
+                          </>
+                        )}
+                      </p>
+                    </div>
+                    <span className="shrink-0 text-xs text-white/45">{formatTimestamp(entry.at)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </motion.section>
+        ) : null}
+
+        {view === 'archive' ? (
+          <motion.section key="archive" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
+            <div className="glass-card rounded-2xl border border-white/10 p-5">
+              <h2 className="section-title">🎞️ Past Events</h2>
+              <p className="text-sm text-white/60">
+                Each event is saved automatically once its start time passes — a permanent record of who came and what they said.
+              </p>
+            </div>
+
+            {state.archives.length === 0 ? (
+              <div className="glass-card rounded-2xl border border-white/10 p-6 text-sm text-white/60">
+                No events archived yet. The current event will be saved here once its start time passes.
+              </div>
+            ) : (
+              state.archives.map((archive) => {
+                const going = archive.attendees.filter((a) => a.status === 'yes')
+                return (
+                  <article key={archive.id} className="glass-card rounded-2xl border border-white/10 p-5">
+                    <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+                      <h3 className="font-display text-xl">{archive.details.title}</h3>
+                      <span className="text-xs text-white/50">Archived {formatTimestamp(archive.archivedAt)}</span>
+                    </div>
+                    <div className="mb-4 flex flex-wrap gap-3 text-sm text-white/70">
+                      <span>📅 {new Date(`${archive.details.date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                      <span>🕘 {new Date(`1970-01-01T${archive.details.plannedStartTime}:00`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+                      <span>📍 {archive.details.location}</span>
+                      <span className="font-semibold text-emerald-200">{going.length} went</span>
+                    </div>
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      {archive.attendees.map((attendee) => (
+                        <div key={attendee.name} className={`archive-person ${attendee.status ? `person-${attendee.status}` : ''}`}>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-semibold">{attendee.name}</span>
+                            <span className={`status-chip ${attendee.status ? `chip-${attendee.status}` : 'chip-none'}`}>
+                              {STATUS_LABEL[attendee.status]}
+                            </span>
+                          </div>
+                          {attendee.comments.trim() ? (
+                            <p className="mt-1 text-xs text-white/70">“{attendee.comments}”</p>
+                          ) : null}
+                        </div>
+                      ))}
+                    </div>
+                  </article>
+                )
+              })
+            )}
+          </motion.section>
+        ) : null}
       </main>
 
       <AnimatePresence>
