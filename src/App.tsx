@@ -117,12 +117,26 @@ const STATUS_LABEL: Record<AttendanceStatus, string> = {
 
 const avatarColor = (status: AttendanceStatus) => (status ? STATUS_COLOR[status] : 'rgba(255,255,255,0.18)')
 
+// Turn a 24h "HH:MM" input value into a friendly 12-hour label ("4:00 PM").
+// Pinned to 12-hour everywhere so the site never shows military time, even on
+// devices whose locale defaults to a 24-hour clock.
+const formatTimeInputLabel = (value: string) => {
+  const [hourRaw, minuteRaw] = value.split(':')
+  let hour = Number(hourRaw)
+  const minute = Number(minuteRaw)
+  const period = hour >= 12 ? 'PM' : 'AM'
+  hour %= 12
+  if (hour === 0) hour = 12
+  return `${hour}:${String(minute).padStart(2, '0')} ${period}`
+}
+
 const formatTimestamp = (ms: number) =>
-  new Date(ms).toLocaleString(undefined, {
+  new Date(ms).toLocaleString('en-US', {
     month: 'short',
     day: 'numeric',
     hour: 'numeric',
     minute: '2-digit',
+    hour12: true,
   })
 
 // A self-contained VTIMEZONE for America/Winnipeg (Central) so the event lands
@@ -205,17 +219,16 @@ const saveCalendarEvent = (details: MovieNightDetails) => {
 }
 
 const buildInviteText = (details: MovieNightDetails) => {
-  const date = new Date(`${details.date}T00:00:00`).toLocaleDateString(undefined, {
+  const date = new Date(`${details.date}T00:00:00`).toLocaleDateString('en-US', {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
+    year: 'numeric',
   })
-  const time = new Date(`1970-01-01T${details.plannedStartTime}:00`).toLocaleTimeString([], {
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+  const time = formatTimeInputLabel(details.plannedStartTime)
+  const endTime = details.plannedEndTime ? ` – ${formatTimeInputLabel(details.plannedEndTime)}` : ''
   const url = typeof window !== 'undefined' ? window.location.origin + window.location.pathname : ''
-  return `🎬 ${details.title}\n📅 ${date} at ${time}\n📍 ${details.location} (host: ${details.host})\nRSVP: ${url}`
+  return `🎬 ${details.title}\n📅 ${date} at ${time}${endTime}\n📍 ${details.location} (host: ${details.host})\nRSVP: ${url}`
 }
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 // 10MB
@@ -267,16 +280,6 @@ const initials = (name: string) =>
     .join('')
     .slice(0, 2)
     .toUpperCase()
-
-const formatTimeInputLabel = (value: string) => {
-  const [hourRaw, minuteRaw] = value.split(':')
-  let hour = Number(hourRaw)
-  const minute = Number(minuteRaw)
-  const period = hour >= 12 ? 'PM' : 'AM'
-  hour %= 12
-  if (hour === 0) hour = 12
-  return `${hour}:${String(minute).padStart(2, '0')} ${period}`
-}
 
 const toMinutes = (value: string) => {
   const [time, period] = value.split(' ')
@@ -373,6 +376,8 @@ function App() {
   // Reset asks for a final confirmation even after the PIN is entered.
   const [confirmReset, setConfirmReset] = useState(false)
   const [avatarError, setAvatarError] = useState('')
+  // Friend whose photo removal is awaiting confirmation.
+  const [removePhotoFor, setRemovePhotoFor] = useState<Friend | null>(null)
   const [copiedInvite, setCopiedInvite] = useState(false)
   const [draftMovies, setDraftMovies] = useState<Record<string, string>>({})
   const [draggedMovie, setDraggedMovie] = useState<{ friendId: string; movieId: string } | null>(null)
@@ -831,7 +836,7 @@ function App() {
               <span className="icon-wrap"><CalendarDays size={20} /></span>
               <div>
                 <p className="label">Date</p>
-                <p className="value">{new Date(`${state.details.date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</p>
+                <p className="value">{new Date(`${state.details.date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</p>
               </div>
             </div>
             <div className="hero-detail">
@@ -839,19 +844,8 @@ function App() {
               <div>
                 <p className="label">Time</p>
                 <p className="value">
-                  {new Date(`1970-01-01T${state.details.plannedStartTime}:00`).toLocaleTimeString([], {
-                    hour: 'numeric',
-                    minute: '2-digit',
-                  })}
-                  {state.details.plannedEndTime ? (
-                    <>
-                      {' – '}
-                      {new Date(`1970-01-01T${state.details.plannedEndTime}:00`).toLocaleTimeString([], {
-                        hour: 'numeric',
-                        minute: '2-digit',
-                      })}
-                    </>
-                  ) : null}
+                  {formatTimeInputLabel(state.details.plannedStartTime)}
+                  {state.details.plannedEndTime ? ` – ${formatTimeInputLabel(state.details.plannedEndTime)}` : null}
                 </p>
               </div>
             </div>
@@ -1037,7 +1031,7 @@ function App() {
                           {friend.avatarUrl ? (
                             <button
                               type="button"
-                              onClick={() => updateFriend(friend.id, (current) => ({ ...current, avatarUrl: undefined }))}
+                              onClick={() => setRemovePhotoFor(friend)}
                               className="text-xs text-white/50 underline-offset-2 hover:text-white/80 hover:underline"
                             >
                               Remove photo
@@ -1269,8 +1263,8 @@ function App() {
                       <span className="text-xs text-white/50">Archived {formatTimestamp(archive.archivedAt)}</span>
                     </div>
                     <div className="mb-4 flex flex-wrap gap-3 text-sm text-white/70">
-                      <span>📅 {new Date(`${archive.details.date}T00:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}</span>
-                      <span>🕘 {new Date(`1970-01-01T${archive.details.plannedStartTime}:00`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}</span>
+                      <span>📅 {new Date(`${archive.details.date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                      <span>🕘 {formatTimeInputLabel(archive.details.plannedStartTime)}{archive.details.plannedEndTime ? ` – ${formatTimeInputLabel(archive.details.plannedEndTime)}` : ''}</span>
                       <span>📍 {archive.details.location}</span>
                       <span className="font-semibold text-emerald-200">{going.length} went</span>
                     </div>
@@ -1299,6 +1293,61 @@ function App() {
           </motion.section>
         ) : null}
       </main>
+
+      <AnimatePresence>
+        {removePhotoFor ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+            onClick={() => setRemovePhotoFor(null)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              onClick={(event) => event.stopPropagation()}
+              className="glass-card w-full max-w-sm rounded-3xl border border-white/15 p-6 shadow-2xl"
+            >
+              <div className="mb-4 flex items-center gap-3">
+                <Avatar
+                  name={removePhotoFor.name}
+                  status={removePhotoFor.status}
+                  avatarUrl={removePhotoFor.avatarUrl}
+                  size={48}
+                />
+                <div>
+                  <h2 className="font-display text-xl leading-tight">Remove photo?</h2>
+                  <p className="text-xs text-white/60">{removePhotoFor.name}'s profile picture</p>
+                </div>
+              </div>
+              <p className="text-sm text-white/70">
+                This clears the picture for everyone. You can always upload a new one.
+              </p>
+              <div className="mt-5 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRemovePhotoFor(null)}
+                  className="rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white/80 transition hover:bg-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    updateFriend(removePhotoFor.id, (current) => ({ ...current, avatarUrl: undefined }))
+                    setRemovePhotoFor(null)
+                  }}
+                  className="rounded-xl bg-red-500/90 px-4 py-2.5 text-sm font-semibold transition hover:bg-red-400"
+                >
+                  Remove
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       <AnimatePresence>
         {confirmReset ? (
