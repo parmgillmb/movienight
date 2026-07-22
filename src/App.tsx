@@ -1,13 +1,16 @@
 import { AnimatePresence, motion } from 'framer-motion'
 import {
   CalendarDays,
+  CalendarPlus,
   Camera,
+  Check,
   Clock3,
   Edit3,
   Film,
   House,
   Lock,
   Plus,
+  Share2,
   Sparkles,
   Star,
   Trash2,
@@ -120,6 +123,47 @@ const formatTimestamp = (ms: number) =>
     hour: 'numeric',
     minute: '2-digit',
   })
+
+// Build an .ics calendar file for the event (2-hour default duration).
+const buildIcsDataUrl = (details: MovieNightDetails) => {
+  const start = new Date(`${details.date}T${details.plannedStartTime}:00`)
+  const end = new Date(start.getTime() + 2 * 60 * 60 * 1000)
+  const fmt = (d: Date) =>
+    `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}T${String(
+      d.getUTCHours(),
+    ).padStart(2, '0')}${String(d.getUTCMinutes()).padStart(2, '0')}00Z`
+  const esc = (s: string) => s.replace(/([,;\\])/g, '\\$1').replace(/\n/g, '\\n')
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Movie Night//EN',
+    'BEGIN:VEVENT',
+    `UID:${start.getTime()}@movie-night`,
+    `DTSTAMP:${fmt(new Date())}`,
+    `DTSTART:${fmt(start)}`,
+    `DTEND:${fmt(end)}`,
+    `SUMMARY:${esc(details.title)}`,
+    `LOCATION:${esc(details.location)}`,
+    `DESCRIPTION:${esc(`Hosted by ${details.host}. ${details.notes}`)}`,
+    'END:VEVENT',
+    'END:VCALENDAR',
+  ]
+  return `data:text/calendar;charset=utf-8,${encodeURIComponent(lines.join('\r\n'))}`
+}
+
+const buildInviteText = (details: MovieNightDetails) => {
+  const date = new Date(`${details.date}T00:00:00`).toLocaleDateString(undefined, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+  })
+  const time = new Date(`1970-01-01T${details.plannedStartTime}:00`).toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+  const url = typeof window !== 'undefined' ? window.location.origin + window.location.pathname : ''
+  return `🎬 ${details.title}\n📅 ${date} at ${time}\n📍 ${details.location} (host: ${details.host})\nRSVP: ${url}`
+}
 
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 // 10MB
 const AVATAR_SIZE = 256 // px, square
@@ -275,6 +319,7 @@ function App() {
   // Reset asks for a final confirmation even after the PIN is entered.
   const [confirmReset, setConfirmReset] = useState(false)
   const [avatarError, setAvatarError] = useState('')
+  const [copiedInvite, setCopiedInvite] = useState(false)
   const [draftMovies, setDraftMovies] = useState<Record<string, string>>({})
   const [draggedMovie, setDraggedMovie] = useState<{ friendId: string; movieId: string } | null>(null)
   // Unconfirmed status picks live only in local state; they sync to everyone
@@ -439,6 +484,16 @@ function App() {
       ...prev,
       friends: prev.friends.map((friend) => (friend.id === friendId ? updater(friend) : friend)),
     }))
+  }
+
+  const copyInvite = async () => {
+    try {
+      await navigator.clipboard.writeText(buildInviteText(state.details))
+      setCopiedInvite(true)
+      window.setTimeout(() => setCopiedInvite(false), 2000)
+    } catch {
+      setAvatarError('Could not copy — your browser blocked clipboard access.')
+    }
   }
 
   const handleAvatarUpload = async (friendId: string, file: File | undefined) => {
@@ -664,6 +719,25 @@ function App() {
               <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${syncStatus === 'saved' ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-100' : syncStatus === 'saving' ? 'border-amber-400/40 bg-amber-500/15 text-amber-100' : syncStatus === 'error' ? 'border-rose-400/40 bg-rose-500/15 text-rose-100' : 'border-white/15 bg-white/5 text-white/70'}`}>
                 {syncStatus === 'loading' ? 'Loading cloud state...' : syncStatus === 'saving' ? 'Saving to cloud...' : syncStatus === 'error' ? 'Cloud sync error' : 'Saved to cloud'}
               </span>
+              <button
+                type="button"
+                onClick={() => void copyInvite()}
+                className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold transition hover:bg-white/10"
+              >
+                <span className="inline-flex items-center gap-2">
+                  {copiedInvite ? <Check size={16} className="text-emerald-300" /> : <Share2 size={16} />}
+                  {copiedInvite ? 'Copied!' : 'Invite'}
+                </span>
+              </button>
+              <a
+                href={buildIcsDataUrl(state.details)}
+                download={`${state.details.title.replace(/[^\w]+/g, '-') || 'movie-night'}.ics`}
+                className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold transition hover:bg-white/10"
+              >
+                <span className="inline-flex items-center gap-2">
+                  <CalendarPlus size={16} /> Add to Calendar
+                </span>
+              </a>
               <button
                 type="button"
                 onClick={() => requestUnlock('edit')}
