@@ -40,6 +40,7 @@ type MovieNightDetails = {
   title: string
   date: string
   plannedStartTime: string
+  plannedEndTime: string
   location: string
   host: string
   notes: string
@@ -124,24 +125,67 @@ const formatTimestamp = (ms: number) =>
     minute: '2-digit',
   })
 
-// Build an .ics calendar file for the event (2-hour default duration).
+// A self-contained VTIMEZONE for America/Winnipeg (Central) so the event lands
+// in Winnipeg local time on any device, regardless of the viewer's timezone.
+const WINNIPEG_VTIMEZONE = [
+  'BEGIN:VTIMEZONE',
+  'TZID:America/Winnipeg',
+  'BEGIN:DAYLIGHT',
+  'TZOFFSETFROM:-0600',
+  'TZOFFSETTO:-0500',
+  'TZNAME:CDT',
+  'DTSTART:19700308T020000',
+  'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU',
+  'END:DAYLIGHT',
+  'BEGIN:STANDARD',
+  'TZOFFSETFROM:-0500',
+  'TZOFFSETTO:-0600',
+  'TZNAME:CST',
+  'DTSTART:19701101T020000',
+  'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU',
+  'END:STANDARD',
+  'END:VTIMEZONE',
+]
+
+// Build an .ics for the event, pinned to Winnipeg time. Times are written as
+// local wall-clock with TZID=America/Winnipeg (no 'Z'), so Apple Calendar shows
+// exactly the start/end you set here no matter where the phone is.
 const buildIcsText = (details: MovieNightDetails) => {
-  const start = new Date(`${details.date}T${details.plannedStartTime}:00`)
-  const end = new Date(start.getTime() + 2 * 60 * 60 * 1000)
-  const fmt = (d: Date) =>
+  // Local wall-clock stamp: YYYYMMDDTHHMMSS (no timezone suffix).
+  const localStamp = (date: string, time: string) => {
+    const [hh = '00', mm = '00'] = time.split(':')
+    return `${date.replace(/-/g, '')}T${hh}${mm}00`
+  }
+  // DTSTAMP must be UTC.
+  const utcStamp = (d: Date) =>
     `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}T${String(
       d.getUTCHours(),
     ).padStart(2, '0')}${String(d.getUTCMinutes()).padStart(2, '0')}00Z`
+
   const esc = (s: string) => s.replace(/([,;\\])/g, '\\$1').replace(/\n/g, '\\n')
+
+  // Fall back to a 2-hour block if no end time is set or it isn't after start.
+  const startStamp = localStamp(details.date, details.plannedStartTime)
+  let endStamp = details.plannedEndTime ? localStamp(details.date, details.plannedEndTime) : ''
+  if (!endStamp || endStamp <= startStamp) {
+    const [h = '0', m = '0'] = details.plannedStartTime.split(':')
+    const endMin = Number(h) * 60 + Number(m) + 120
+    const eh = String(Math.floor((endMin % 1440) / 60)).padStart(2, '0')
+    const em = String(endMin % 60).padStart(2, '0')
+    endStamp = localStamp(details.date, `${eh}:${em}`)
+  }
+
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
     'PRODID:-//Movie Night//EN',
+    'CALSCALE:GREGORIAN',
+    ...WINNIPEG_VTIMEZONE,
     'BEGIN:VEVENT',
-    `UID:${start.getTime()}@movie-night`,
-    `DTSTAMP:${fmt(new Date())}`,
-    `DTSTART:${fmt(start)}`,
-    `DTEND:${fmt(end)}`,
+    `UID:${details.date}-${details.plannedStartTime}@movie-night`,
+    `DTSTAMP:${utcStamp(new Date())}`,
+    `DTSTART;TZID=America/Winnipeg:${startStamp}`,
+    `DTEND;TZID=America/Winnipeg:${endStamp}`,
     `SUMMARY:${esc(details.title)}`,
     `LOCATION:${esc(details.location)}`,
     `DESCRIPTION:${esc(`Hosted by ${details.host}. ${details.notes}`)}`,
@@ -151,45 +195,13 @@ const buildIcsText = (details: MovieNightDetails) => {
   return lines.join('\r\n')
 }
 
-const icsFileName = (details: MovieNightDetails) =>
-  `${details.title.replace(/[^\w]+/g, '-') || 'movie-night'}.ics`
-
-// Hand the .ics to the OS the best way each platform supports. On phones we
-// prefer the native share sheet (which shows an "Add to Calendar" option);
-// everywhere else we download via a Blob object URL, which mobile browsers
-// handle far more reliably than a data: URL.
-const saveCalendarEvent = async (details: MovieNightDetails) => {
+// Navigate straight to the .ics so iOS Safari hands it to Apple Calendar's
+// "Add Event" screen directly — no share sheet, no saved file.
+const saveCalendarEvent = (details: MovieNightDetails) => {
   const text = buildIcsText(details)
-  const fileName = icsFileName(details)
-  const file = new File([text], fileName, { type: 'text/calendar' })
-
-  // Try the native share sheet first (great on iOS/Android).
-  const nav = navigator as Navigator & {
-    canShare?: (data: { files: File[] }) => boolean
-    share?: (data: { files?: File[]; title?: string; text?: string }) => Promise<void>
-  }
-  if (nav.share && nav.canShare?.({ files: [file] })) {
-    try {
-      await nav.share({ files: [file], title: details.title, text: `Add ${details.title} to your calendar` })
-      return
-    } catch (error) {
-      // User cancelled the share sheet — that's fine, don't fall through.
-      if (error instanceof DOMException && error.name === 'AbortError') return
-      // Any other failure: fall through to the download path.
-    }
-  }
-
-  // Blob download fallback.
   const url = URL.createObjectURL(new Blob([text], { type: 'text/calendar;charset=utf-8' }))
-  const link = document.createElement('a')
-  link.href = url
-  link.download = fileName
-  link.rel = 'noopener'
-  document.body.appendChild(link)
-  link.click()
-  document.body.removeChild(link)
-  // Revoke after a tick so the download has started.
-  window.setTimeout(() => URL.revokeObjectURL(url), 4000)
+  window.location.href = url
+  window.setTimeout(() => URL.revokeObjectURL(url), 10000)
 }
 
 const buildInviteText = (details: MovieNightDetails) => {
@@ -289,6 +301,7 @@ const DEFAULT_DETAILS: MovieNightDetails = {
     title: 'Movie Night',
     date: '2026-08-08',
     plannedStartTime: '16:00',
+    plannedEndTime: '18:00',
     location: "Parmeet's House",
     host: 'Parmeet',
     notes: 'Bring your best snacks and arrive 15 minutes early for trailers.',
@@ -389,9 +402,10 @@ function App() {
         }
 
         const payload = (await response.json()) as { state: AppState; version: number }
-        // Older DB rows predate these arrays; default them so the app is safe.
+        // Older DB rows predate some fields; default them so the app is safe.
         const remoteState: AppState = {
           ...payload.state,
+          details: { ...payload.state.details, plannedEndTime: payload.state.details.plannedEndTime ?? '18:00' },
           activityLog: payload.state.activityLog ?? [],
           archives: payload.state.archives ?? [],
         }
@@ -567,6 +581,7 @@ function App() {
     title: 'Title',
     date: 'Date',
     plannedStartTime: 'Start time',
+    plannedEndTime: 'End time',
     location: 'Location',
     host: 'Host',
     notes: 'Notes',
@@ -772,7 +787,7 @@ function App() {
               </button>
               <button
                 type="button"
-                onClick={() => void saveCalendarEvent(state.details)}
+                onClick={() => saveCalendarEvent(state.details)}
                 className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold transition hover:bg-white/10"
               >
                 <span className="inline-flex items-center gap-2">
@@ -822,12 +837,21 @@ function App() {
             <div className="hero-detail">
               <span className="icon-wrap"><Clock3 size={20} /></span>
               <div>
-                <p className="label">Start Time</p>
+                <p className="label">Time</p>
                 <p className="value">
                   {new Date(`1970-01-01T${state.details.plannedStartTime}:00`).toLocaleTimeString([], {
                     hour: 'numeric',
                     minute: '2-digit',
                   })}
+                  {state.details.plannedEndTime ? (
+                    <>
+                      {' – '}
+                      {new Date(`1970-01-01T${state.details.plannedEndTime}:00`).toLocaleTimeString([], {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                      })}
+                    </>
+                  ) : null}
                 </p>
               </div>
             </div>
@@ -861,18 +885,25 @@ function App() {
               >
                 <input className="field" value={state.details.title} onChange={(event) => setState((prev) => ({ ...prev, details: { ...prev.details, title: event.target.value } }))} placeholder="Movie Night Title" />
                 <input className="field" type="date" value={state.details.date} onChange={(event) => setState((prev) => ({ ...prev, details: { ...prev.details, date: event.target.value } }))} />
-                <input className="field" type="time" value={state.details.plannedStartTime} onChange={(event) => setState((prev) => {
-                  const prevDefault = formatTimeInputLabel(prev.details.plannedStartTime)
-                  const nextDefault = formatTimeInputLabel(event.target.value)
-                  return {
-                    ...prev,
-                    details: { ...prev.details, plannedStartTime: event.target.value },
-                    // Everyone still on the old default arrival follows the new start time.
-                    friends: prev.friends.map((friend) =>
-                      friend.arrivalTime === prevDefault ? { ...friend, arrivalTime: nextDefault } : friend,
-                    ),
-                  }
-                })} />
+                <label className="block text-xs text-white/60">
+                  Start time
+                  <input className="field mt-1" type="time" value={state.details.plannedStartTime} onChange={(event) => setState((prev) => {
+                    const prevDefault = formatTimeInputLabel(prev.details.plannedStartTime)
+                    const nextDefault = formatTimeInputLabel(event.target.value)
+                    return {
+                      ...prev,
+                      details: { ...prev.details, plannedStartTime: event.target.value },
+                      // Everyone still on the old default arrival follows the new start time.
+                      friends: prev.friends.map((friend) =>
+                        friend.arrivalTime === prevDefault ? { ...friend, arrivalTime: nextDefault } : friend,
+                      ),
+                    }
+                  })} />
+                </label>
+                <label className="block text-xs text-white/60">
+                  End time
+                  <input className="field mt-1" type="time" value={state.details.plannedEndTime} onChange={(event) => setState((prev) => ({ ...prev, details: { ...prev.details, plannedEndTime: event.target.value } }))} />
+                </label>
                 <input className="field" value={state.details.location} onChange={(event) => setState((prev) => ({ ...prev, details: { ...prev.details, location: event.target.value } }))} placeholder="Location" />
                 <input className="field" value={state.details.host} onChange={(event) => setState((prev) => ({ ...prev, details: { ...prev.details, host: event.target.value } }))} placeholder="Host" />
                 <input className="field md:col-span-2" value={state.details.notes} onChange={(event) => setState((prev) => ({ ...prev, details: { ...prev.details, notes: event.target.value } }))} placeholder="Description / Notes" />
