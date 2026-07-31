@@ -26,6 +26,9 @@ type MovieSuggestion = {
   favorite: boolean
 }
 
+type DayKey = 'fri' | 'sat' | 'sun'
+type Availability = Record<DayKey, boolean>
+
 type Friend = {
   id: string
   name: string
@@ -34,7 +37,16 @@ type Friend = {
   comments: string
   movies: MovieSuggestion[]
   avatarUrl?: string // small downscaled data URL, stored in shared state
+  availability: Availability
 }
+
+const DAYS: { key: DayKey; label: string; short: string }[] = [
+  { key: 'fri', label: 'Friday', short: 'Fri' },
+  { key: 'sat', label: 'Saturday', short: 'Sat' },
+  { key: 'sun', label: 'Sunday', short: 'Sun' },
+]
+
+const emptyAvailability = (): Availability => ({ fri: false, sat: false, sun: false })
 
 type MovieNightDetails = {
   title: string
@@ -91,7 +103,7 @@ const generateArrivalOptions = () => {
 }
 const ARRIVAL_OPTIONS = generateArrivalOptions()
 
-const FRIENDS = ['Nik', 'Sebastien', 'Mattias', 'Robbie', 'Ethan', 'Cam', 'Parmeet', 'Raph', 'Aiden']
+const FRIENDS = ['Nik', 'Sebastien', 'Mattias', 'Robbie', 'Ethan', 'Parmeet', 'Cam', 'Raph', 'Aiden']
 
 const createId = () =>
   typeof crypto !== 'undefined' && crypto.randomUUID
@@ -320,6 +332,7 @@ const createDefaultFriends = (plannedStartTime: string): Friend[] => {
     arrivalTime: defaultArrivalTime,
     comments: '',
     movies: [],
+    availability: emptyAvailability(),
   }))
 }
 
@@ -370,11 +383,12 @@ function App() {
   // Unlocked for the rest of the session once the PIN is entered.
   const [isUnlocked, setIsUnlocked] = useState(false)
   // Which action the PIN prompt is currently gating, if any.
-  const [pinPrompt, setPinPrompt] = useState<'edit' | 'reset' | null>(null)
+  const [pinPrompt, setPinPrompt] = useState<'edit' | 'reset' | 'archive' | null>(null)
   const [pinInput, setPinInput] = useState('')
   const [pinError, setPinError] = useState(false)
   // Reset asks for a final confirmation even after the PIN is entered.
   const [confirmReset, setConfirmReset] = useState(false)
+  const [confirmArchive, setConfirmArchive] = useState(false)
   const [avatarError, setAvatarError] = useState('')
   // Friend whose photo removal is awaiting confirmation.
   const [removePhotoFor, setRemovePhotoFor] = useState<Friend | null>(null)
@@ -411,6 +425,10 @@ function App() {
         const remoteState: AppState = {
           ...payload.state,
           details: { ...payload.state.details, plannedEndTime: payload.state.details.plannedEndTime ?? '18:00' },
+          friends: payload.state.friends.map((friend) => ({
+            ...friend,
+            availability: friend.availability ?? emptyAvailability(),
+          })),
           activityLog: payload.state.activityLog ?? [],
           archives: payload.state.archives ?? [],
         }
@@ -510,21 +528,11 @@ function App() {
     return () => window.clearInterval(timer)
   }, [])
 
-  // Once the event's start time passes, snapshot it into the archive exactly
-  // once. The archive id encodes the event so re-editing details later (a new
-  // event) archives separately, but the same event never double-archives.
-  useEffect(() => {
-    if (!isLoaded) return
-    const startMs = new Date(`${state.details.date}T${state.details.plannedStartTime}:00`).getTime()
-    if (Number.isNaN(startMs) || now < startMs) return
-
-    const eventId = `${state.details.date}|${state.details.plannedStartTime}|${state.details.title}`
-    if (state.archives.some((archive) => archive.id === eventId)) return
-
+  // Manually snapshot the current event into Past Events.
+  const archiveEvent = () => {
     setState((prev) => {
-      if (prev.archives.some((archive) => archive.id === eventId)) return prev
       const archive: EventArchive = {
-        id: eventId,
+        id: createId(),
         archivedAt: Date.now(),
         details: { ...prev.details },
         attendees: prev.friends.map((friend) => ({
@@ -537,12 +545,21 @@ function App() {
       }
       return { ...prev, archives: [archive, ...prev.archives] }
     })
-  }, [isLoaded, now, state.details, state.archives, state.friends])
+    setConfirmArchive(false)
+  }
 
   const updateFriend = (friendId: string, updater: (friend: Friend) => Friend) => {
     setState((prev) => ({
       ...prev,
       friends: prev.friends.map((friend) => (friend.id === friendId ? updater(friend) : friend)),
+    }))
+  }
+
+  const toggleAvailability = (friend: Friend, day: DayKey) => {
+    const av = friend.availability ?? emptyAvailability()
+    updateFriend(friend.id, (current) => ({
+      ...current,
+      availability: { ...(current.availability ?? emptyAvailability()), [day]: !av[day] },
     }))
   }
 
@@ -666,21 +683,24 @@ function App() {
     setConfirmReset(false)
   }
 
-  // Reset requires a final confirmation on top of the PIN, since it wipes
-  // everyone's answers and the activity log.
-  const startEditOrReset = (action: 'edit' | 'reset') => {
+  type GatedAction = 'edit' | 'reset' | 'archive'
+
+  // Reset and archive require a final confirmation on top of the PIN.
+  const runGatedAction = (action: GatedAction) => {
     if (action === 'edit') {
       if (isEditingDetails) closeDetailsEditing()
       else openDetailsEditing()
-    } else {
+    } else if (action === 'reset') {
       setConfirmReset(true)
+    } else {
+      setConfirmArchive(true)
     }
   }
 
   // Run a protected action, prompting for the PIN first if still locked.
-  const requestUnlock = (action: 'edit' | 'reset') => {
+  const requestUnlock = (action: GatedAction) => {
     if (isUnlocked) {
-      startEditOrReset(action)
+      runGatedAction(action)
       return
     }
     setPinInput('')
@@ -699,9 +719,20 @@ function App() {
     setPinPrompt(null)
     setPinInput('')
     setPinError(false)
-    if (action === 'edit') startEditOrReset('edit')
-    else if (action === 'reset') startEditOrReset('reset')
+    if (action) runGatedAction(action)
   }
+
+  // Tally each day's ticks across everyone, and find the winning day(s).
+  const dayAvailability = useMemo(() => {
+    const counts: Record<DayKey, number> = { fri: 0, sat: 0, sun: 0 }
+    for (const friend of state.friends) {
+      const av = friend.availability ?? emptyAvailability()
+      for (const { key } of DAYS) if (av[key]) counts[key] += 1
+    }
+    const max = Math.max(counts.fri, counts.sat, counts.sun)
+    const winners = max > 0 ? DAYS.filter((d) => counts[d.key] === max) : []
+    return { counts, max, winners }
+  }, [state.friends])
 
   const attendanceStats = useMemo(() => {
     const yes = state.friends.filter((friend) => friend.status === 'yes')
@@ -927,6 +958,36 @@ function App() {
         <motion.section key="dashboard" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
               <section className="glass-card rounded-2xl border border-white/10 p-5">
                 <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <h2 className="section-title mb-0">📅 Best Day</h2>
+                  {dayAvailability.max > 0 ? (
+                    <span className="best-day-badge">
+                      {dayAvailability.winners.map((d) => d.label).join(' & ')}
+                      <span className="best-day-count">{dayAvailability.max} available</span>
+                    </span>
+                  ) : (
+                    <span className="text-sm text-white/50">No availability picked yet</span>
+                  )}
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  {DAYS.map((day) => {
+                    const count = dayAvailability.counts[day.key]
+                    const isWinner = dayAvailability.max > 0 && count === dayAvailability.max
+                    const pct = state.friends.length ? Math.round((count / state.friends.length) * 100) : 0
+                    return (
+                      <div key={day.key} className={`day-tally ${isWinner ? 'day-tally-win' : ''}`}>
+                        <p className="text-sm font-semibold">{day.label}</p>
+                        <p className="font-display text-2xl">{count}</p>
+                        <div className="day-bar">
+                          <div className="day-bar-fill" style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </section>
+
+              <section className="glass-card rounded-2xl border border-white/10 p-5">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
                   <h2 className="section-title mb-0">Who's Coming</h2>
                   <div className="flex gap-2 text-sm font-semibold">
                     <span className="status-chip chip-yes">{attendanceStats.yes} Going</span>
@@ -1041,6 +1102,26 @@ function App() {
                           )}
                         </div>
                       </div>
+
+                      <p className="mb-2 text-xs uppercase tracking-wide text-white/60">Which days can you make it?</p>
+                      <div className="mb-3 grid grid-cols-3 gap-2">
+                        {DAYS.map((day) => {
+                          const on = (friend.availability ?? emptyAvailability())[day.key]
+                          return (
+                            <button
+                              key={day.key}
+                              type="button"
+                              onClick={() => toggleAvailability(friend, day.key)}
+                              aria-pressed={on}
+                              className={`day-check ${on ? 'day-check-on' : ''}`}
+                            >
+                              <span className="day-check-box">{on ? '✓' : ''}</span>
+                              {day.short}
+                            </button>
+                          )
+                        })}
+                      </div>
+
                       <p className="mb-3 text-xs uppercase tracking-wide text-white/60">Attendance Status</p>
                       <div className="mb-3 grid grid-cols-3 gap-2">
                         {([
@@ -1243,15 +1324,26 @@ function App() {
         {view === 'archive' ? (
           <motion.section key="archive" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
             <div className="glass-card rounded-2xl border border-white/10 p-5">
-              <h2 className="section-title">🎞️ Past Events</h2>
-              <p className="text-sm text-white/60">
-                Each event is saved automatically once its start time passes — a permanent record of who came and what they said.
-              </p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="section-title mb-1">🎞️ Past Events</h2>
+                  <p className="text-sm text-white/60">
+                    A permanent record of who came and what they said. Archive the event when it happens.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => requestUnlock('archive')}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-red-500/90 px-4 py-2.5 text-sm font-semibold transition hover:bg-red-400"
+                >
+                  {isUnlocked ? null : <Lock size={14} />} Archive this event
+                </button>
+              </div>
             </div>
 
             {state.archives.length === 0 ? (
               <div className="glass-card rounded-2xl border border-white/10 p-6 text-sm text-white/60">
-                No events archived yet. The current event will be saved here once its start time passes.
+                No events archived yet. Tap “Archive this event” above to save the current event here.
               </div>
             ) : (
               state.archives.map((archive) => {
@@ -1350,6 +1442,47 @@ function App() {
       </AnimatePresence>
 
       <AnimatePresence>
+        {confirmArchive ? (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4 backdrop-blur-sm"
+            onClick={() => setConfirmArchive(false)}
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.94, y: 12 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.96, y: 8 }}
+              onClick={(event) => event.stopPropagation()}
+              className="glass-card w-full max-w-sm rounded-3xl border border-white/15 p-6 shadow-2xl"
+            >
+              <h2 className="font-display text-xl">Archive this event?</h2>
+              <p className="mt-2 text-sm text-white/70">
+                Saves a snapshot of the current details and everyone's answers to Past Events. Attendance stays as-is — use Reset separately to clear it for the next event.
+              </p>
+              <div className="mt-5 grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmArchive(false)}
+                  className="rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-sm font-semibold text-white/80 transition hover:bg-white/10"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={archiveEvent}
+                  className="rounded-xl bg-red-500/90 px-4 py-2.5 text-sm font-semibold transition hover:bg-red-400"
+                >
+                  Archive it
+                </button>
+              </div>
+            </motion.div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
+
+      <AnimatePresence>
         {confirmReset ? (
           <motion.div
             initial={{ opacity: 0 }}
@@ -1413,7 +1546,11 @@ function App() {
                 <div>
                   <h2 className="font-display text-xl leading-tight">Enter PIN</h2>
                   <p className="text-xs text-white/60">
-                    {pinPrompt === 'reset' ? 'Required to reset everything' : 'Required to edit the details'}
+                    {pinPrompt === 'reset'
+                      ? 'Required to reset everything'
+                      : pinPrompt === 'archive'
+                        ? 'Required to archive the event'
+                        : 'Required to edit the details'}
                   </p>
                 </div>
               </div>
