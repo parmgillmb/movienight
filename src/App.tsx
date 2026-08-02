@@ -19,6 +19,7 @@ import Ambience from './Ambience'
 import CinematicBackdrop from './CinematicBackdrop'
 import Magnetic from './Magnetic'
 import PersonCard from './PersonCard'
+import { FilmStripDivider, ReelMark } from './Vintage'
 
 type AttendanceStatus = 'yes' | 'maybe' | 'no' | ''
 
@@ -397,11 +398,14 @@ function Avatar({
   )
 }
 
-// Cinematic section header: a "reel" index, the title, and a hairline rule.
+// Cinematic section header: a spinning reel mark, a "reel" index, the title,
+// and a hairline rule.
 function SectionHead({ index, title, aside }: { index: string; title: string; aside?: ReactNode }) {
   return (
     <div className="sec-head">
-      <span className="sec-index font-mono">{index}</span>
+      <span className="sec-index font-mono">
+        <ReelMark size={16} /> {index}
+      </span>
       <h2 className="sec-title font-display">{title}</h2>
       <span className="sec-rule" />
       {aside ? <div className="sec-aside">{aside}</div> : null}
@@ -412,7 +416,7 @@ function SectionHead({ index, title, aside }: { index: string; title: string; as
 function App() {
   const [state, setState] = useState<AppState>(defaultState)
   const [isEditingDetails, setIsEditingDetails] = useState(false)
-  const [view, setView] = useState<'dashboard' | 'log' | 'archive'>('dashboard')
+  const [view, setView] = useState<'dashboard' | 'attendance' | 'log' | 'archive'>('dashboard')
   // Unlocked for the rest of the session once the PIN is entered.
   const [isUnlocked, setIsUnlocked] = useState(false)
   // Which action the PIN prompt is currently gating, if any.
@@ -901,6 +905,7 @@ function App() {
       </AnimatePresence>
       <div className="mesh-bg" aria-hidden="true" />
       <div className="aurora" aria-hidden="true" />
+      <div className="aged-paper" aria-hidden="true" />
       <CinematicBackdrop />
       <Ambience />
       <div className="vignette" aria-hidden="true" />
@@ -1075,6 +1080,7 @@ function App() {
         <div className="mb-6 flex gap-2 rounded-2xl border border-white/10 bg-black/20 p-1.5 backdrop-blur">
           {([
             ['dashboard', 'Dashboard'],
+            ['attendance', `Attendance${attendanceStats.expectedGuests ? ` (${attendanceStats.expectedGuests})` : ''}`],
             ['log', `Activity Log${state.activityLog.length ? ` (${state.activityLog.length})` : ''}`],
             ['archive', `Past Events${state.archives.length ? ` (${state.archives.length})` : ''}`],
           ] as const).map(([key, label]) => (
@@ -1090,7 +1096,15 @@ function App() {
         </div>
 
         {view === 'dashboard' ? (
-        <motion.section key="dashboard" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+        <section className="space-y-6">
+              <div className="vintage-banner banner-marquee">
+                <div className="banner-body">
+                  <p className="banner-kicker">Tonight at the Picture House</p>
+                  <p className="banner-title">The Feature Awaits</p>
+                  <p className="banner-sub">Cast your night, claim your seat, and call the film — the reels below run the show.</p>
+                </div>
+              </div>
+
               <section className="glass-card rounded-[22px] border border-white/10 p-6">
                 <SectionHead
                   index="Reel 01 · The Vote"
@@ -1125,17 +1139,9 @@ function App() {
               </section>
 
               <section className="glass-card rounded-[22px] border border-white/10 p-6">
-                <SectionHead
-                  index="Reel 02 · The Table"
-                  title="Who's Coming"
-                  aside={
-                    <div className="flex gap-2">
-                      <span className="status-chip chip-yes">{attendanceStats.yes} Going</span>
-                      <span className="status-chip chip-maybe">{attendanceStats.maybe} Maybe</span>
-                      <span className="status-chip chip-no">{attendanceStats.no} Can't</span>
-                    </div>
-                  }
-                />
+                <SectionHead index="Reel 02 · The Table" title="Who's Coming" />
+
+                {/* Guest list first */}
                 <div className="flex flex-wrap gap-2">
                   {whosComing.map((friend) => (
                     <motion.span
@@ -1149,6 +1155,22 @@ function App() {
                       {friend.name}
                     </motion.span>
                   ))}
+                </div>
+
+                {/* Summary spans full width beneath the list */}
+                <div className="attend-summary">
+                  <div className="attend-tally tally-yes">
+                    <span className="attend-n">{attendanceStats.yes}</span>
+                    <span className="attend-lbl">Going</span>
+                  </div>
+                  <div className="attend-tally tally-maybe">
+                    <span className="attend-n">{attendanceStats.maybe}</span>
+                    <span className="attend-lbl">Maybe</span>
+                  </div>
+                  <div className="attend-tally tally-no">
+                    <span className="attend-n">{attendanceStats.no}</span>
+                    <span className="attend-lbl">Can't Make It</span>
+                  </div>
                 </div>
               </section>
 
@@ -1179,6 +1201,8 @@ function App() {
                 </section>
               ) : null}
 
+              <FilmStripDivider label="Intermission" />
+
               {comments.length ? (
                 <section className="glass-card rounded-[22px] border border-white/10 p-6">
                   <SectionHead index="Reel 04 · The Chatter" title="What People Said" />
@@ -1199,10 +1223,41 @@ function App() {
                 </section>
               ) : null}
 
+              <section className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-[22px] border border-white/10 bg-black/20 p-5">
+                <div>
+                  <p className="label mb-1">Manage the cast</p>
+                  <p className="text-sm text-white/60">Set who's in, their night, and their notes on the Attendance tab.</p>
+                </div>
+                <Magnetic strength={0.3}>
+                  <button type="button" onClick={() => setView('attendance')} className="gold-btn">
+                    Open Attendance →
+                  </button>
+                </Magnetic>
+              </section>
+
+              <section className="mt-10 flex justify-end">
+                <Magnetic strength={0.25}>
+                  <button type="button" onClick={() => requestUnlock('reset')} className="danger-btn">
+                    {isUnlocked ? null : <Lock size={14} />} Reset the Table
+                  </button>
+                </Magnetic>
+              </section>
+        </section>
+        ) : null}
+
+        {view === 'attendance' ? (
+          <section className="space-y-6">
+              <div className="vintage-banner banner-reel">
+                <div className="banner-body">
+                  <p className="banner-kicker">Reel 05 · The Cast</p>
+                  <p className="banner-title">Roll Call</p>
+                  <p className="banner-sub">Deal yourself in: pick your nights, make the call, add your notes.</p>
+                </div>
+              </div>
               <section>
                 <SectionHead index="Reel 05 · The Cast" title="Attendance" />
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {state.friends.map((friend, index) => {
+                  {state.friends.map((friend) => {
                     const hasCustomArrival = Boolean(friend.arrivalTime) && friend.arrivalTime !== defaultArrivalLabel
                     const hasComment = friend.comments.trim().length > 0
 
@@ -1210,7 +1265,7 @@ function App() {
                     const needsConfirm = pending !== friend.status
 
                     return (
-                    <PersonCard key={friend.id} index={index} statusClass={friend.status ? `person-${friend.status}` : ''}>
+                    <PersonCard key={friend.id} statusClass={friend.status ? `person-${friend.status}` : ''}>
                       <span className="card-pip card-pip-tl" aria-hidden="true">{friend.name.charAt(0).toUpperCase()}<b>♠</b></span>
                       <span className="card-pip card-pip-br" aria-hidden="true">{friend.name.charAt(0).toUpperCase()}<b>♠</b></span>
                       <div className="mb-3 flex items-center gap-3">
@@ -1408,19 +1463,11 @@ function App() {
                   })}
                 </div>
               </section>
-
-              <section className="mt-10 flex justify-end">
-                <Magnetic strength={0.25}>
-                  <button type="button" onClick={() => requestUnlock('reset')} className="danger-btn">
-                    {isUnlocked ? null : <Lock size={14} />} Reset the Table
-                  </button>
-                </Magnetic>
-              </section>
-        </motion.section>
+        </section>
         ) : null}
 
         {view === 'log' ? (
-          <motion.section key="log" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-card rounded-[22px] border border-white/10 p-6">
+          <section className="glass-card rounded-[22px] border border-white/10 p-6">
             <SectionHead index="The Record · Live" title="Activity Log" />
             <p className="mb-4 text-sm text-white/55">Every call and every edit, newest first.</p>
             {state.activityLog.length === 0 ? (
@@ -1456,11 +1503,11 @@ function App() {
                 ))}
               </ul>
             )}
-          </motion.section>
+          </section>
         ) : null}
 
         {view === 'archive' ? (
-          <motion.section key="archive" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
+          <section className="space-y-5">
             <div className="glass-card rounded-[22px] border border-white/10 p-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="flex-1">
@@ -1518,7 +1565,7 @@ function App() {
                 )
               })
             )}
-          </motion.section>
+          </section>
         ) : null}
       </main>
 

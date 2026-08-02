@@ -147,8 +147,9 @@ body::after {
 }
 .sec-index {
   grid-column: 1 / -1;
+  display: inline-flex; align-items: center; gap: 0.5rem;
   font-size: 0.64rem; letter-spacing: 0.26em; text-transform: uppercase; color: var(--gold-hot);
-  opacity: 0.85;
+  opacity: 0.9;
 }
 .sec-title {
   font-family: var(--display); text-transform: uppercase; line-height: 0.95;
@@ -165,6 +166,29 @@ body::after {
 /* status glyph for who's-coming chips (replaces emoji) */
 .chip-glyph { width: 9px; height: 9px; border-radius: 100px; background: currentColor; box-shadow: 0 0 8px currentColor; }
 .chip-glyph.none { background: var(--bone-faint); box-shadow: none; }
+
+/* full-width attendance summary beneath the guest list (Reel 02) */
+.attend-summary {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.7rem;
+  margin-top: 1.25rem; padding-top: 1.25rem; border-top: 1px solid var(--edge);
+}
+.attend-tally {
+  display: flex; align-items: baseline; gap: 0.6rem;
+  border-radius: 14px; border: 1px solid var(--edge);
+  background: color-mix(in srgb, var(--void) 40%, transparent);
+  padding: 0.85rem 1.05rem;
+}
+.attend-tally .attend-n { font-family: var(--display); font-size: 2rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.attend-tally .attend-lbl { font-family: var(--mono); font-size: 0.68rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--bone-dim); }
+.tally-yes { border-color: color-mix(in srgb, var(--go) 40%, transparent); background: color-mix(in srgb, var(--go) 10%, transparent); }
+.tally-yes .attend-n { color: color-mix(in srgb, var(--go) 60%, #fff); }
+.tally-maybe { border-color: color-mix(in srgb, var(--hold) 40%, transparent); background: color-mix(in srgb, var(--hold) 10%, transparent); }
+.tally-maybe .attend-n { color: color-mix(in srgb, var(--hold) 65%, #fff); }
+.tally-no { border-color: color-mix(in srgb, var(--fold) 40%, transparent); background: color-mix(in srgb, var(--fold) 10%, transparent); }
+.tally-no .attend-n { color: color-mix(in srgb, var(--fold) 65%, #fff); }
+@media (max-width: 560px) {
+  .attend-summary { grid-template-columns: 1fr; }
+}
 
 /* ============================================================
    Inputs
@@ -604,6 +628,101 @@ body.custom-cursor-on, body.custom-cursor-on * { cursor: none !important; }
 }
 .curtain-rule { height: 1px; background: var(--gold); margin: 1rem auto 0; }
 .curtain-sub { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.4em; text-transform: uppercase; color: var(--bone-dim); margin-top: 1rem; }
+
+/* ============================================================
+   VINTAGE CINEMA TREATMENT
+   Real public-domain photos (see public/vintage/CREDITS.md) as tasteful
+   banners/textures, plus procedural 35mm film-strip dividers & reel marks.
+   ============================================================ */
+
+/* aged-paper warmth layered over the base atmosphere */
+.aged-paper {
+  position: fixed; inset: 0; z-index: 0; pointer-events: none; opacity: 0.5;
+  background:
+    radial-gradient(80% 60% at 50% 0%, color-mix(in srgb, #b98a3e 10%, transparent), transparent 60%),
+    radial-gradient(120% 80% at 50% 120%, color-mix(in srgb, #4a2c12 22%, transparent), transparent 55%);
+  mix-blend-mode: soft-light;
+}
+
+/* 35mm film-strip divider between sections */
+.film-divider { margin: 0.4rem 0; padding: 0; user-select: none; }
+.film-strip {
+  position: relative; display: flex; align-items: center; justify-content: center;
+  height: 34px; border-radius: 6px;
+  background:
+    linear-gradient(180deg, #14100b, #0a0806);
+  border: 1px solid color-mix(in srgb, var(--bone) 8%, transparent);
+  box-shadow: inset 0 0 30px rgba(0,0,0,0.6);
+  overflow: hidden;
+}
+.film-strip .sprockets {
+  flex: 1; height: 100%;
+  /* rounded-square perforations along the strip */
+  background-image: radial-gradient(color-mix(in srgb, var(--bone) 82%, transparent) 0 40%, transparent 42%);
+  background-size: 22px 34px; background-position: center;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+  opacity: 0.55;
+}
+.film-strip .sprockets::before { display: none; }
+.film-divider-label {
+  padding: 0 1.1rem; white-space: nowrap;
+  font-size: 0.62rem; letter-spacing: 0.34em; text-transform: uppercase;
+  color: var(--gold-hot); background: #0a0806;
+}
+
+/* reel mark */
+.reel-mark { color: var(--gold-hot); animation: reel-spin 9s linear infinite; }
+@keyframes reel-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .reel-mark { animation: none; } }
+
+/* vintage feature banner: a real PD poster/marquee framed like a lobby card */
+.vintage-banner {
+  position: relative; overflow: hidden;
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--gold) 30%, var(--edge));
+  min-height: 200px;
+  display: flex; align-items: flex-end;
+  box-shadow: 0 30px 70px -30px rgba(0,0,0,0.85), inset 0 0 0 1px color-mix(in srgb, var(--bone) 5%, transparent);
+}
+.vintage-banner::before {
+  /* the photo, aged: desaturated, warm, vignetted, grainy */
+  content: ""; position: absolute; inset: 0; z-index: 0;
+  background-size: cover; background-position: center;
+  filter: sepia(0.55) contrast(1.05) brightness(0.62) saturate(0.7);
+}
+.vintage-banner::after {
+  /* readability + sepia wash + top light leak */
+  content: ""; position: absolute; inset: 0; z-index: 1;
+  background:
+    linear-gradient(180deg, color-mix(in srgb, #1a0f04 30%, transparent), color-mix(in srgb, var(--void) 92%, transparent)),
+    radial-gradient(60% 40% at 80% 0%, color-mix(in srgb, var(--amber-glow) 22%, transparent), transparent 60%);
+}
+.banner-marquee::before { background-image: url("/vintage/marquee-1932.jpg"); }
+.banner-reel::before { background-image: url("/vintage/film-reel.jpg"); }
+.vintage-banner .banner-body { position: relative; z-index: 2; padding: 1.6rem 1.8rem; }
+.vintage-banner .banner-kicker { font-family: var(--mono); font-size: 0.64rem; letter-spacing: 0.3em; text-transform: uppercase; color: var(--gold-hot); }
+.vintage-banner .banner-title { font-family: var(--display); text-transform: uppercase; font-size: clamp(1.6rem, 4vw, 2.6rem); line-height: 0.95; margin: 0.4rem 0 0; }
+.vintage-banner .banner-sub { font-family: var(--serif); font-style: italic; color: var(--bone-dim); margin: 0.5rem 0 0; max-width: 48ch; }
+
+/* framed PD poster (lobby card) — used as a decorative aside */
+.lobby-card {
+  border-radius: 12px; overflow: hidden; border: 3px solid color-mix(in srgb, var(--gold) 40%, #2a2013);
+  box-shadow: 0 20px 44px -18px rgba(0,0,0,0.8); background: #0a0806; position: relative;
+}
+.lobby-card img { display: block; width: 100%; height: 100%; object-fit: cover; filter: sepia(0.35) contrast(1.04) saturate(0.85); }
+.lobby-card::after { content: ""; position: absolute; inset: 0; box-shadow: inset 0 0 40px rgba(0,0,0,0.5); pointer-events: none; }
+
+/* ticket-stub accent (procedural) */
+.ticket-stub {
+  display: inline-flex; align-items: center; gap: 0.6rem;
+  font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.18em; text-transform: uppercase;
+  color: #201607; background: linear-gradient(100deg, var(--gold), var(--gold-hot));
+  padding: 0.5rem 1rem 0.5rem 1.3rem; position: relative;
+  -webkit-mask-image: radial-gradient(circle at 0 50%, transparent 6px, #000 6px);
+  mask-image: radial-gradient(circle at 0 50%, transparent 6px, #000 6px);
+  border-radius: 4px;
+}
 
 @media (max-width: 640px) {
   .section-title { font-size: 1.4rem; }
