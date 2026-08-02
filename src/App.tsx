@@ -11,12 +11,14 @@ import {
   Lock,
   Plus,
   Share2,
-  Sparkles,
   Star,
   Trash2,
 } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import Ambience from './Ambience'
+import CinematicBackdrop from './CinematicBackdrop'
+import Magnetic from './Magnetic'
+import PersonCard from './PersonCard'
 
 type AttendanceStatus = 'yes' | 'maybe' | 'no' | ''
 
@@ -395,6 +397,18 @@ function Avatar({
   )
 }
 
+// Cinematic section header: a "reel" index, the title, and a hairline rule.
+function SectionHead({ index, title, aside }: { index: string; title: string; aside?: ReactNode }) {
+  return (
+    <div className="sec-head">
+      <span className="sec-index font-mono">{index}</span>
+      <h2 className="sec-title font-display">{title}</h2>
+      <span className="sec-rule" />
+      {aside ? <div className="sec-aside">{aside}</div> : null}
+    </div>
+  )
+}
+
 function App() {
   const [state, setState] = useState<AppState>(defaultState)
   const [isEditingDetails, setIsEditingDetails] = useState(false)
@@ -412,6 +426,13 @@ function App() {
   // Friend whose photo removal is awaiting confirmation.
   const [removePhotoFor, setRemovePhotoFor] = useState<Friend | null>(null)
   const [copiedInvite, setCopiedInvite] = useState(false)
+  // Page-load "curtain" title sequence (once per mount).
+  const [curtainUp, setCurtainUp] = useState(false)
+  useEffect(() => {
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    const t = window.setTimeout(() => setCurtainUp(true), reduce ? 0 : 1900)
+    return () => window.clearTimeout(t)
+  }, [])
   const [draftMovies, setDraftMovies] = useState<Record<string, string>>({})
   const [draggedMovie, setDraggedMovie] = useState<{ friendId: string; movieId: string } | null>(null)
   // Unconfirmed status picks live only in local state; they sync to everyone
@@ -846,74 +867,118 @@ function App() {
   }, [now, state.details.date, state.details.plannedStartTime])
 
   return (
-    <div className="min-h-screen bg-canvas text-white">
+    <div className="min-h-screen text-white">
+      <AnimatePresence>
+        {!curtainUp ? (
+          <motion.div
+            className="curtain"
+            initial={{ opacity: 1 }}
+            exit={{ opacity: 0, transition: { duration: 0.6, ease: 'easeInOut' } }}
+          >
+            <div className="curtain-inner">
+              <motion.p
+                className="curtain-mark"
+                initial={{ letterSpacing: '0.8em', opacity: 0 }}
+                animate={{ letterSpacing: '0.3em', opacity: 1, transition: { duration: 1.1, ease: [0.22, 1, 0.36, 1] } }}
+              >
+                Movie Night
+              </motion.p>
+              <motion.div
+                className="curtain-rule"
+                initial={{ width: 0 }}
+                animate={{ width: 220, transition: { duration: 1, delay: 0.5, ease: [0.22, 1, 0.36, 1] } }}
+              />
+              <motion.p
+                className="curtain-sub"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1, transition: { delay: 1, duration: 0.6 } }}
+              >
+                Now Showing
+              </motion.p>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
       <div className="mesh-bg" aria-hidden="true" />
       <div className="aurora" aria-hidden="true" />
+      <CinematicBackdrop />
       <Ambience />
+      <div className="vignette" aria-hidden="true" />
       <main className="relative z-10 mx-auto max-w-7xl px-4 pb-16 pt-6 sm:px-6 lg:px-8">
         <motion.header
           initial={{ opacity: 0, y: 24 }}
           animate={{ opacity: 1, y: 0 }}
-          className="glass-card mb-6 overflow-hidden rounded-3xl border border-white/15 p-6 shadow-2xl"
+          className="hero-stage glass-card mb-6 overflow-hidden rounded-[28px] border border-white/10 p-6 shadow-2xl sm:p-9"
         >
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <h1 className="font-display text-3xl tracking-tight sm:text-4xl">Movie Night Command Center</h1>
+          {/* top bar: presented-by tag + sync status + magnetic actions */}
+          <div className="mb-8 flex flex-wrap items-center justify-between gap-3">
+            <span className="label inline-flex items-center gap-2">
+              <span className="now-playing-dot" /> Now presenting · The Crew
+            </span>
             <div className="flex flex-wrap items-center gap-2">
-              <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${syncStatus === 'saved' ? 'border-emerald-400/40 bg-emerald-500/15 text-emerald-100' : syncStatus === 'saving' ? 'border-amber-400/40 bg-amber-500/15 text-amber-100' : syncStatus === 'error' ? 'border-rose-400/40 bg-rose-500/15 text-rose-100' : 'border-white/15 bg-white/5 text-white/70'}`}>
-                {syncStatus === 'loading' ? 'Loading cloud state...' : syncStatus === 'saving' ? 'Saving to cloud...' : syncStatus === 'error' ? 'Cloud sync error' : 'Saved to cloud'}
+              <span className={`sync-pill ${syncStatus}`}>
+                <span className="sync-dot" />
+                {syncStatus === 'loading' ? 'Syncing' : syncStatus === 'saving' ? 'Saving' : syncStatus === 'error' ? 'Sync error' : 'Saved'}
               </span>
-              <button
-                type="button"
-                onClick={() => void copyInvite()}
-                className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold transition hover:bg-white/10"
-              >
-                <span className="inline-flex items-center gap-2">
-                  {copiedInvite ? <Check size={16} className="text-emerald-300" /> : <Share2 size={16} />}
-                  {copiedInvite ? 'Copied!' : 'Invite'}
+              <Magnetic>
+                <button type="button" onClick={() => void copyInvite()} className="ghost-btn">
+                  {copiedInvite ? <Check size={15} className="text-emerald-300" /> : <Share2 size={15} />}
+                  {copiedInvite ? 'Copied' : 'Invite'}
+                </button>
+              </Magnetic>
+              <Magnetic>
+                <button type="button" onClick={() => saveCalendarEvent(state.details)} className="ghost-btn">
+                  <CalendarPlus size={15} /> Calendar
+                </button>
+              </Magnetic>
+              <Magnetic>
+                <button type="button" onClick={() => requestUnlock('edit')} className="gold-btn">
+                  {isUnlocked ? <Edit3 size={15} /> : <Lock size={15} />} Edit
+                </button>
+              </Magnetic>
+            </div>
+          </div>
+
+          {/* the title card */}
+          <div className="title-block">
+            <p className="feature-eyebrow font-mono">Feature Presentation</p>
+            <h1 className="feature-title font-display" title={state.details.title}>
+              {state.details.title}
+            </h1>
+            {state.details.notes.trim() ? (
+              <p className="feature-tagline font-serif">{state.details.notes}</p>
+            ) : null}
+          </div>
+
+          {/* showtime marquee */}
+          <div className="marquee showtime-marquee" aria-hidden="true">
+            <div className="marquee-track">
+              {Array.from({ length: 2 }).map((_, dup) => (
+                <span key={dup} className="marquee-group">
+                  <span>★ SHOWTIME {formatTimeInputLabel(state.details.plannedStartTime)}</span>
+                  <span>★ {new Date(`${state.details.date}T00:00:00`).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</span>
+                  <span>★ {state.details.location.toUpperCase()}</span>
+                  <span>★ {attendanceStats.yes} SEATS CLAIMED</span>
+                  <span>★ HOSTED BY {state.details.host.toUpperCase()}</span>
                 </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => saveCalendarEvent(state.details)}
-                className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm font-semibold transition hover:bg-white/10"
-              >
-                <span className="inline-flex items-center gap-2">
-                  <CalendarPlus size={16} /> Add to Calendar
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => requestUnlock('edit')}
-                className="rounded-xl bg-red-500/90 px-3 py-2 text-sm font-semibold transition hover:bg-red-400"
-              >
-                <span className="inline-flex items-center gap-2">
-                  {isUnlocked ? <Edit3 size={16} /> : <Lock size={16} />} Edit Details
-                </span>
-              </button>
+              ))}
             </div>
           </div>
 
           {syncStatus === 'error' && syncMessage ? (
-            <p className="mt-3 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            <p className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
               {syncMessage}
             </p>
           ) : null}
-
           {avatarError ? (
-            <p className="mt-3 flex items-center justify-between gap-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+            <p className="mt-4 flex items-center justify-between gap-3 rounded-2xl border border-amber-400/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
               <span>{avatarError}</span>
               <button type="button" onClick={() => setAvatarError('')} className="text-amber-200/70 hover:text-white">✕</button>
             </p>
           ) : null}
 
-          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-            <div className="hero-detail">
-              <span className="icon-wrap"><Film size={20} /></span>
-              <div>
-                <p className="label">Event</p>
-                <p className="value">{state.details.title}</p>
-              </div>
-            </div>
+          {/* marquee readouts */}
+          <div className="mt-7 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
             <div className="hero-detail">
               <span className="icon-wrap"><CalendarDays size={20} /></span>
               <div>
@@ -924,7 +989,7 @@ function App() {
             <div className="hero-detail">
               <span className="icon-wrap"><Clock3 size={20} /></span>
               <div>
-                <p className="label">Time</p>
+                <p className="label">Showtime</p>
                 <p className="value">
                   {formatTimeInputLabel(state.details.plannedStartTime)}
                   {state.details.plannedEndTime ? ` – ${formatTimeInputLabel(state.details.plannedEndTime)}` : null}
@@ -934,21 +999,18 @@ function App() {
             <div className="hero-detail">
               <span className="icon-wrap"><House size={20} /></span>
               <div>
-                <p className="label">Where</p>
+                <p className="label">Venue</p>
                 <p className="value">{state.details.location}</p>
-                <p className="text-xs text-white/60">Host: {state.details.host}</p>
+                <p className="text-xs text-white/50">Host · {state.details.host}</p>
               </div>
             </div>
-          </div>
-
-          <div className="mt-4 flex flex-wrap items-center gap-3">
-            <span className="countdown-pill"><span className="dot" /> {countdown}</span>
-            {state.details.notes.trim() ? (
-              <p className="flex-1 min-w-64 rounded-xl border border-white/10 bg-black/20 px-4 py-2.5 text-sm text-white/80">
-                <Sparkles size={14} className="mr-1.5 inline text-red-300" />
-                {state.details.notes}
-              </p>
-            ) : null}
+            <div className="hero-detail hero-detail-countdown">
+              <span className="icon-wrap"><Film size={20} /></span>
+              <div>
+                <p className="label">Curtain Up</p>
+                <p className="value countdown-value font-mono">{countdown}</p>
+              </div>
+            </div>
           </div>
 
           <AnimatePresence>
@@ -1029,18 +1091,21 @@ function App() {
 
         {view === 'dashboard' ? (
         <motion.section key="dashboard" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
-              <section className="glass-card rounded-2xl border border-white/10 p-5">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="section-title mb-0">📅 Best Day</h2>
-                  {dayAvailability.max > 0 ? (
-                    <span className="best-day-badge">
-                      {dayAvailability.winners.map((d) => d.label).join(' & ')}
-                      <span className="best-day-count">{dayAvailability.max} available</span>
-                    </span>
-                  ) : (
-                    <span className="text-sm text-white/50">No availability picked yet</span>
-                  )}
-                </div>
+              <section className="glass-card rounded-[22px] border border-white/10 p-6">
+                <SectionHead
+                  index="Reel 01 · The Vote"
+                  title="Best Night"
+                  aside={
+                    dayAvailability.max > 0 ? (
+                      <span className="best-day-badge">
+                        {dayAvailability.winners.map((d) => d.label).join(' & ')}
+                        <span className="best-day-count">{dayAvailability.max} in</span>
+                      </span>
+                    ) : (
+                      <span className="label">Awaiting votes</span>
+                    )
+                  }
+                />
                 <div className="grid grid-cols-3 gap-3">
                   {DAYS.map((day) => {
                     const count = dayAvailability.counts[day.key]
@@ -1048,8 +1113,8 @@ function App() {
                     const pct = state.friends.length ? Math.round((count / state.friends.length) * 100) : 0
                     return (
                       <div key={day.key} className={`day-tally ${isWinner ? 'day-tally-win' : ''}`}>
-                        <p className="text-sm font-semibold">{day.label}</p>
-                        <p className="font-display text-2xl">{count}</p>
+                        <p>{day.label}</p>
+                        <p className="day-n">{count}</p>
                         <div className="day-bar">
                           <div className="day-bar-fill" style={{ width: `${pct}%` }} />
                         </div>
@@ -1059,15 +1124,18 @@ function App() {
                 </div>
               </section>
 
-              <section className="glass-card rounded-2xl border border-white/10 p-5">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <h2 className="section-title mb-0">Who's Coming</h2>
-                  <div className="flex gap-2 text-sm font-semibold">
-                    <span className="status-chip chip-yes">{attendanceStats.yes} Going</span>
-                    <span className="status-chip chip-maybe">{attendanceStats.maybe} Maybe</span>
-                    <span className="status-chip chip-no">{attendanceStats.no} Can't</span>
-                  </div>
-                </div>
+              <section className="glass-card rounded-[22px] border border-white/10 p-6">
+                <SectionHead
+                  index="Reel 02 · The Table"
+                  title="Who's Coming"
+                  aside={
+                    <div className="flex gap-2">
+                      <span className="status-chip chip-yes">{attendanceStats.yes} Going</span>
+                      <span className="status-chip chip-maybe">{attendanceStats.maybe} Maybe</span>
+                      <span className="status-chip chip-no">{attendanceStats.no} Can't</span>
+                    </div>
+                  }
+                />
                 <div className="flex flex-wrap gap-2">
                   {whosComing.map((friend) => (
                     <motion.span
@@ -1077,15 +1145,16 @@ function App() {
                       className={`status-chip ${friend.status ? `chip-${friend.status}` : 'chip-none'}`}
                       title={STATUS_LABEL[friend.status]}
                     >
-                      {friend.status === 'yes' ? '✅' : friend.status === 'maybe' ? '🤔' : friend.status === 'no' ? '❌' : '•'} {friend.name}
+                      <span className={`chip-glyph ${friend.status || 'none'}`} />
+                      {friend.name}
                     </motion.span>
                   ))}
                 </div>
               </section>
 
               {moviePicks.length ? (
-                <section className="glass-card rounded-2xl border border-white/10 p-5">
-                  <h2 className="section-title">🍿 Movie Picks</h2>
+                <section className="glass-card rounded-[22px] border border-white/10 p-6">
+                  <SectionHead index="Reel 03 · The Shortlist" title="Movie Picks" />
                   <div className="grid gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
                     {moviePicks.map((person) => (
                       <div key={person.id} className="pick-row">
@@ -1111,8 +1180,8 @@ function App() {
               ) : null}
 
               {comments.length ? (
-                <section className="glass-card rounded-2xl border border-white/10 p-5">
-                  <h2 className="section-title">💬 What People Said</h2>
+                <section className="glass-card rounded-[22px] border border-white/10 p-6">
+                  <SectionHead index="Reel 04 · The Chatter" title="What People Said" />
                   <div className="grid gap-2.5 sm:grid-cols-2">
                     {comments.map((comment) => (
                       <div key={comment.id} className="comment-row">
@@ -1131,7 +1200,7 @@ function App() {
               ) : null}
 
               <section>
-                <h2 className="section-title">Attendance</h2>
+                <SectionHead index="Reel 05 · The Cast" title="Attendance" />
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                   {state.friends.map((friend, index) => {
                     const hasCustomArrival = Boolean(friend.arrivalTime) && friend.arrivalTime !== defaultArrivalLabel
@@ -1141,13 +1210,9 @@ function App() {
                     const needsConfirm = pending !== friend.status
 
                     return (
-                    <motion.article
-                      key={friend.id}
-                      initial={{ opacity: 0, y: 10 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ delay: index * 0.03 }}
-                      className={`glass-card lift person-card rounded-2xl border border-white/10 p-4 ${friend.status ? `person-${friend.status}` : ''}`}
-                    >
+                    <PersonCard key={friend.id} index={index} statusClass={friend.status ? `person-${friend.status}` : ''}>
+                      <span className="card-pip card-pip-tl" aria-hidden="true">{friend.name.charAt(0).toUpperCase()}<b>♠</b></span>
+                      <span className="card-pip card-pip-br" aria-hidden="true">{friend.name.charAt(0).toUpperCase()}<b>♠</b></span>
                       <div className="mb-3 flex items-center gap-3">
                         <label className="avatar-upload" title="Upload a profile picture (max 10MB)">
                           <Avatar name={friend.name} status={friend.status} avatarUrl={friend.avatarUrl} size={52} />
@@ -1338,28 +1403,26 @@ function App() {
                           </button>
                         </div>
                       </details>
-                    </motion.article>
+                    </PersonCard>
                     )
                   })}
                 </div>
               </section>
 
-              <section className="mt-8 flex justify-end">
-                <button
-                  type="button"
-                  onClick={() => requestUnlock('reset')}
-                  className="inline-flex items-center gap-2 rounded-2xl border border-red-300/30 bg-red-500/15 px-5 py-3 text-sm font-semibold text-red-100 transition hover:bg-red-500/25 hover:text-white"
-                >
-                  {isUnlocked ? null : <Lock size={14} />} Reset Everything
-                </button>
+              <section className="mt-10 flex justify-end">
+                <Magnetic strength={0.25}>
+                  <button type="button" onClick={() => requestUnlock('reset')} className="danger-btn">
+                    {isUnlocked ? null : <Lock size={14} />} Reset the Table
+                  </button>
+                </Magnetic>
               </section>
         </motion.section>
         ) : null}
 
         {view === 'log' ? (
-          <motion.section key="log" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-card rounded-2xl border border-white/10 p-5">
-            <h2 className="section-title">📝 Activity Log</h2>
-            <p className="mb-4 text-sm text-white/60">Every attendance change and detail edit, newest first.</p>
+          <motion.section key="log" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="glass-card rounded-[22px] border border-white/10 p-6">
+            <SectionHead index="The Record · Live" title="Activity Log" />
+            <p className="mb-4 text-sm text-white/55">Every call and every edit, newest first.</p>
             {state.activityLog.length === 0 ? (
               <p className="rounded-xl border border-white/10 bg-black/20 p-4 text-sm text-white/60">
                 No activity yet. Changes to attendance or event details will show up here.
@@ -1398,21 +1461,19 @@ function App() {
 
         {view === 'archive' ? (
           <motion.section key="archive" initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="space-y-5">
-            <div className="glass-card rounded-2xl border border-white/10 p-5">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <h2 className="section-title mb-1">🎞️ Past Events</h2>
-                  <p className="text-sm text-white/60">
-                    A permanent record of who came and what they said. Archive the event when it happens.
+            <div className="glass-card rounded-[22px] border border-white/10 p-6">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="flex-1">
+                  <SectionHead index="The Vault · Archive" title="Past Events" />
+                  <p className="text-sm text-white/55">
+                    A permanent record of who came and what they said. Roll the credits when the night wraps.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => requestUnlock('archive')}
-                  className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-red-500/90 px-4 py-2.5 text-sm font-semibold transition hover:bg-red-400"
-                >
-                  {isUnlocked ? null : <Lock size={14} />} Archive this event
-                </button>
+                <Magnetic strength={0.25}>
+                  <button type="button" onClick={() => requestUnlock('archive')} className="gold-btn shrink-0">
+                    {isUnlocked ? null : <Lock size={14} />} Roll Credits
+                  </button>
+                </Magnetic>
               </div>
             </div>
 
