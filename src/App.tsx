@@ -315,6 +315,23 @@ const initials = (name: string) =>
     .slice(0, 2)
     .toUpperCase()
 
+// Split a string into text and emoji runs so emoji can be rendered at a
+// controlled size inside the huge display title (otherwise a single emoji
+// renders at full em-height and overlaps the line below).
+const EMOJI_RE = /(\p{Extended_Pictographic}(‍\p{Extended_Pictographic})*|[\u{1F1E6}-\u{1F1FF}]{2})/gu
+const segmentTitle = (value: string): { text: string; emoji: boolean }[] => {
+  const out: { text: string; emoji: boolean }[] = []
+  let last = 0
+  for (const match of value.matchAll(EMOJI_RE)) {
+    const i = match.index ?? 0
+    if (i > last) out.push({ text: value.slice(last, i), emoji: false })
+    out.push({ text: match[0], emoji: true })
+    last = i + match[0].length
+  }
+  if (last < value.length) out.push({ text: value.slice(last), emoji: false })
+  return out.length ? out : [{ text: value, emoji: false }]
+}
+
 const toMinutes = (value: string) => {
   const [time, period] = value.split(' ')
   const [hourRaw, minuteRaw] = time.split(':')
@@ -964,7 +981,13 @@ function App() {
           <div className="title-block">
             <p className="feature-eyebrow font-mono">Feature Presentation</p>
             <h1 className="feature-title font-display" title={state.details.title}>
-              {state.details.title}
+              {segmentTitle(state.details.title).map((seg, i) =>
+                seg.emoji ? (
+                  <span key={i} className="title-emoji">{seg.text}</span>
+                ) : (
+                  <span key={i}>{seg.text}</span>
+                ),
+              )}
             </h1>
             {state.details.notes.trim() ? (
               <p className="feature-tagline font-serif">{state.details.notes}</p>

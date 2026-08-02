@@ -603,11 +603,22 @@ body.custom-cursor-on, body.custom-cursor-on * { cursor: none !important; }
 .feature-title {
   font-family: var(--display);
   font-size: clamp(2.8rem, 11vw, 8.5rem);
-  line-height: 0.86; text-transform: uppercase; letter-spacing: -0.005em;
+  line-height: 0.95; text-transform: uppercase; letter-spacing: -0.005em;
   margin: 0; text-wrap: balance;
+}
+/* the text runs carry the gold gradient */
+.feature-title > span:not(.title-emoji) {
   background: linear-gradient(180deg, var(--bone) 30%, color-mix(in srgb, var(--gold-hot) 70%, var(--bone)));
   -webkit-background-clip: text; background-clip: text; color: transparent;
   text-shadow: 0 0 60px color-mix(in srgb, var(--gold) 20%, transparent);
+}
+/* emoji in the title: their own color font, sized to cap-height and inline so
+   they sit on the line instead of overflowing into the row below */
+.feature-title .title-emoji {
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+  font-size: 0.62em; line-height: 1;
+  display: inline-block; vertical-align: 0.02em; margin: 0 0.08em;
+  -webkit-text-fill-color: initial; /* keep native emoji color, not the clip */
 }
 .feature-tagline {
   margin: 1.3rem 0 0; font-size: clamp(1rem, 2vw, 1.35rem); font-style: italic;
