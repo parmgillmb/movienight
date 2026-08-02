@@ -48,6 +48,23 @@ const DAYS: { key: DayKey; label: string; short: string }[] = [
 
 const emptyAvailability = (): Availability => ({ fri: false, sat: false, sun: false })
 
+// JS getDay(): Sun=0 … Fri=5, Sat=6. Map our day keys to that.
+const DAY_OF_WEEK: Record<DayKey, number> = { fri: 5, sat: 6, sun: 0 }
+
+// Format a Date as a local YYYY-MM-DD string (matches the <input type=date> value).
+const toDateInputValue = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+// The next upcoming date for a given weekday. If today already is that weekday,
+// jump to next week's occurrence (never "today").
+const nextWeekday = (targetDow: number, from = new Date()) => {
+  const d = new Date(from.getFullYear(), from.getMonth(), from.getDate())
+  let delta = (targetDow - d.getDay() + 7) % 7
+  if (delta === 0) delta = 7
+  d.setDate(d.getDate() + delta)
+  return d
+}
+
 type MovieNightDetails = {
   title: string
   date: string
@@ -90,6 +107,8 @@ type AppState = {
   movieVotes: Record<string, MovieVote>
   activityLog: LogEntry[]
   archives: EventArchive[]
+  // When true, the date was set by hand and no longer auto-follows the vote.
+  dateManual?: boolean
 }
 
 const generateArrivalOptions = () => {
@@ -673,8 +692,10 @@ function App() {
         arrivalTime: formatTimeInputLabel(prev.details.plannedStartTime),
         comments: '',
         movies: friend.movies,
+        availability: emptyAvailability(),
       })),
       activityLog: [],
+      dateManual: false,
     }))
     setPendingStatus({})
     setIsEditingDetails(false)
@@ -732,6 +753,36 @@ function App() {
     const max = Math.max(counts.fri, counts.sat, counts.sun)
     const winners = max > 0 ? DAYS.filter((d) => counts[d.key] === max) : []
     return { counts, max, winners }
+  }, [state.friends])
+
+  // The date the best-day vote points at: the single winning day's next
+  // occurrence, or (on a tie / no votes) the next upcoming Friday.
+  const suggestedDate = useMemo(() => {
+    const { winners } = dayAvailability
+    const dayKey: DayKey = winners.length === 1 ? winners[0].key : 'fri'
+    return toDateInputValue(nextWeekday(DAY_OF_WEEK[dayKey], new Date(now)))
+    // recompute as votes change or as the day rolls over
+  }, [dayAvailability, now])
+
+  // Auto-follow: keep the event date on the suggested date until someone edits
+  // it by hand (dateManual). Cleared back to auto by resetAll / the toggle.
+  useEffect(() => {
+    if (!isLoaded || state.dateManual) return
+    if (state.details.date !== suggestedDate) {
+      setState((prev) =>
+        prev.dateManual ? prev : { ...prev, details: { ...prev.details, date: suggestedDate } },
+      )
+    }
+  }, [isLoaded, state.dateManual, state.details.date, suggestedDate])
+
+  // "Who's coming" ordered: going first, then maybe, then can't, then no reply.
+  // Stable within each group (keeps the existing friend order).
+  const whosComing = useMemo(() => {
+    const rank: Record<AttendanceStatus, number> = { yes: 0, maybe: 1, no: 2, '': 3 }
+    return state.friends
+      .map((friend, index) => ({ friend, index }))
+      .sort((a, b) => rank[a.friend.status] - rank[b.friend.status] || a.index - b.index)
+      .map((entry) => entry.friend)
   }, [state.friends])
 
   const attendanceStats = useMemo(() => {
@@ -909,7 +960,29 @@ function App() {
                 className="mt-4 grid gap-3 overflow-hidden rounded-2xl border border-white/10 bg-black/25 p-4 md:grid-cols-2"
               >
                 <input className="field" value={state.details.title} onChange={(event) => setState((prev) => ({ ...prev, details: { ...prev.details, title: event.target.value } }))} placeholder="Movie Night Title" />
-                <input className="field" type="date" value={state.details.date} onChange={(event) => setState((prev) => ({ ...prev, details: { ...prev.details, date: event.target.value } }))} />
+                <label className="block text-xs text-white/60">
+                  <span className="flex items-center justify-between">
+                    Date {state.dateManual ? (
+                      <button
+                        type="button"
+                        onClick={() => setState((prev) => ({ ...prev, dateManual: false }))}
+                        className="text-red-300 underline-offset-2 hover:underline"
+                      >
+                        follow best day
+                      </button>
+                    ) : (
+                      <span className="text-white/40">auto: follows best day</span>
+                    )}
+                  </span>
+                  <input
+                    className="field mt-1"
+                    type="date"
+                    value={state.details.date}
+                    onChange={(event) =>
+                      setState((prev) => ({ ...prev, dateManual: true, details: { ...prev.details, date: event.target.value } }))
+                    }
+                  />
+                </label>
                 <label className="block text-xs text-white/60">
                   Start time
                   <input className="field mt-1" type="time" value={state.details.plannedStartTime} onChange={(event) => setState((prev) => {
@@ -996,14 +1069,16 @@ function App() {
                   </div>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {state.friends.map((friend) => (
-                    <span
+                  {whosComing.map((friend) => (
+                    <motion.span
                       key={friend.id}
+                      layout
+                      transition={{ type: 'spring', stiffness: 500, damping: 40 }}
                       className={`status-chip ${friend.status ? `chip-${friend.status}` : 'chip-none'}`}
                       title={STATUS_LABEL[friend.status]}
                     >
                       {friend.status === 'yes' ? '✅' : friend.status === 'maybe' ? '🤔' : friend.status === 'no' ? '❌' : '•'} {friend.name}
-                    </span>
+                    </motion.span>
                   ))}
                 </div>
               </section>
@@ -1500,7 +1575,7 @@ function App() {
             >
               <h2 className="font-display text-xl">Reset everything?</h2>
               <p className="mt-2 text-sm text-white/70">
-                This clears everyone's attendance, comments, and the activity log. Profile pictures and past events are kept. This can't be undone.
+                This clears everyone's attendance, day availability, comments, and the activity log. Profile pictures and past events are kept. This can't be undone.
               </p>
               <div className="mt-5 grid grid-cols-2 gap-2">
                 <button
