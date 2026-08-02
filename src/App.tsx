@@ -810,6 +810,22 @@ function App() {
       .map((entry) => entry.friend)
   }, [state.friends])
 
+  // Attendance cards: people who haven't confirmed a status float to the top so
+  // they're chased for a reply; anyone who's answered sinks to the bottom.
+  // Stable within each group (keeps the base friend order).
+  const castOrder = useMemo(
+    () =>
+      state.friends
+        .map((friend, index) => ({ friend, index }))
+        .sort((a, b) => {
+          const aAnswered = a.friend.status ? 1 : 0
+          const bAnswered = b.friend.status ? 1 : 0
+          return aAnswered - bAnswered || a.index - b.index
+        })
+        .map((entry) => entry.friend),
+    [state.friends],
+  )
+
   const attendanceStats = useMemo(() => {
     const yes = state.friends.filter((friend) => friend.status === 'yes')
     const maybe = state.friends.filter((friend) => friend.status === 'maybe')
@@ -1106,20 +1122,17 @@ function App() {
               </div>
 
               <section className="glass-card rounded-[22px] border border-white/10 p-6">
-                <SectionHead
-                  index="Reel 01 · The Vote"
-                  title="Best Night"
-                  aside={
-                    dayAvailability.max > 0 ? (
-                      <span className="best-day-badge">
-                        {dayAvailability.winners.map((d) => d.label).join(' & ')}
-                        <span className="best-day-count">{dayAvailability.max} in</span>
-                      </span>
-                    ) : (
-                      <span className="label">Awaiting votes</span>
-                    )
-                  }
-                />
+                <SectionHead index="Reel 01 · The Vote" title="Best Night" />
+                <div className="mb-4">
+                  {dayAvailability.max > 0 ? (
+                    <span className="best-day-badge">
+                      {dayAvailability.winners.map((d) => d.label).join(' & ')}
+                      <span className="best-day-count">{dayAvailability.max} in</span>
+                    </span>
+                  ) : (
+                    <span className="label">Awaiting votes</span>
+                  )}
+                </div>
                 <div className="grid grid-cols-3 gap-3">
                   {DAYS.map((day) => {
                     const count = dayAvailability.counts[day.key]
@@ -1234,14 +1247,6 @@ function App() {
                   </button>
                 </Magnetic>
               </section>
-
-              <section className="mt-10 flex justify-end">
-                <Magnetic strength={0.25}>
-                  <button type="button" onClick={() => requestUnlock('reset')} className="danger-btn">
-                    {isUnlocked ? null : <Lock size={14} />} Reset the Table
-                  </button>
-                </Magnetic>
-              </section>
         </section>
         ) : null}
 
@@ -1257,7 +1262,7 @@ function App() {
               <section>
                 <SectionHead index="Reel 05 · The Cast" title="Attendance" />
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {state.friends.map((friend) => {
+                  {castOrder.map((friend) => {
                     const hasCustomArrival = Boolean(friend.arrivalTime) && friend.arrivalTime !== defaultArrivalLabel
                     const hasComment = friend.comments.trim().length > 0
 
@@ -1462,6 +1467,14 @@ function App() {
                     )
                   })}
                 </div>
+              </section>
+
+              <section className="mt-6 flex justify-end">
+                <Magnetic strength={0.25}>
+                  <button type="button" onClick={() => requestUnlock('reset')} className="danger-btn">
+                    {isUnlocked ? null : <Lock size={14} />} Reset the Table
+                  </button>
+                </Magnetic>
               </section>
         </section>
         ) : null}

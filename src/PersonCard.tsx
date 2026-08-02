@@ -1,11 +1,13 @@
 import { useRef, type ReactNode } from 'react'
+import { motion } from 'framer-motion'
 import { gsap } from 'gsap'
 
 /**
- * A person's "title card". It renders immediately (no entrance animation) and
- * tilts toward the cursor in 3D on hover — a responsive micro-interaction only.
- * All the interactive controls live in `children`. Tilt is skipped on touch and
- * under reduced-motion.
+ * A person's "title card". It renders immediately (no entrance animation) but
+ * animates to a new grid position when the list reorders (framer-motion
+ * `layout`), and tilts toward the cursor in 3D on hover. All the interactive
+ * controls live in `children`. Tilt is skipped on touch and under
+ * reduced-motion.
  */
 export default function PersonCard({
   statusClass,
@@ -32,13 +34,16 @@ export default function PersonCard({
   }
 
   return (
-    <article
+    <motion.article
       ref={ref}
+      layout
+      transition={{ type: 'spring', stiffness: 420, damping: 38 }}
       onPointerMove={onMove}
       onPointerLeave={onLeave}
       className={`title-card glass-card ${statusClass}`}
     >
       {children}
-    </article>
+    </motion.article>
   )
 }
+

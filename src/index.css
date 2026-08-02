@@ -104,7 +104,15 @@ body::after {
 /* vignette + letterbox bars */
 .vignette {
   position: fixed; inset: 0; z-index: 55; pointer-events: none;
-  box-shadow: inset 0 0 220px 40px rgba(0,0,0,0.75), inset 0 0 60px rgba(0,0,0,0.4);
+  box-shadow: inset 0 0 220px 40px rgba(0,0,0,0.7), inset 0 0 60px rgba(0,0,0,0.35);
+}
+/* On narrow screens the wide inset shadow nearly meets in the middle and
+   swallows the edges, so pull the spread + darkness right down, and lift the
+   base gradient off pure black so the top/bottom edges stay legible. */
+@media (max-width: 768px) {
+  .vignette { box-shadow: inset 0 0 70px 0 rgba(0,0,0,0.4); }
+  .mesh-bg { background: linear-gradient(180deg, var(--stage), #0e1613 45%, var(--stage)); }
+  .aged-paper { opacity: 0.3; }
 }
 .letterbox { position: fixed; left: 0; right: 0; height: 0; z-index: 58; pointer-events: none; background: #000; }
 .letterbox-top { top: 0; }
@@ -250,21 +258,26 @@ body::after {
    Rendered as poker "chips"
    ============================================================ */
 .status-btn {
-  display: flex; flex-direction: column; align-items: center; gap: 0.3rem;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.4rem;
   border-radius: 14px;
   border: 1px solid var(--edge);
   background: color-mix(in srgb, var(--bone) 4%, transparent);
   color: var(--bone-dim);
-  padding: 0.7rem 0.4rem;
+  padding: 0.75rem 0.4rem;
+  min-height: 4.6rem;
   font-family: var(--mono);
-  font-weight: 600; font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase;
+  font-weight: 600; font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase;
   cursor: pointer;
   transition: transform 0.2s var(--ease), background-color 0.25s, box-shadow 0.25s, color 0.2s, border-color 0.2s;
 }
-.status-btn .emoji { font-size: 1.35rem; line-height: 1; filter: grayscale(0.4) opacity(0.7); transition: filter 0.2s; }
+/* Emoji rendered in the OS's native color-emoji font at full color — no text
+   font, no desaturation. Its own line box so it can't overlap the label. */
+.status-btn .emoji {
+  font-family: "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", "Twemoji Mozilla", sans-serif;
+  font-size: 1.4rem; line-height: 1; display: block; height: 1.4rem;
+}
 .status-btn:hover { color: var(--bone); background: color-mix(in srgb, var(--bone) 9%, transparent); transform: translateY(-1px); }
 .status-btn-active { color: #fff; transform: translateY(-2px) scale(1.03); }
-.status-btn-active .emoji { filter: none; }
 .status-btn-yes.status-btn-active { background: var(--go); border-color: color-mix(in srgb, var(--go) 60%, #fff); box-shadow: 0 10px 30px color-mix(in srgb, var(--go) 42%, transparent); }
 .status-btn-maybe.status-btn-active { background: var(--hold); border-color: color-mix(in srgb, var(--hold) 60%, #fff); box-shadow: 0 10px 30px color-mix(in srgb, var(--hold) 42%, transparent); }
 .status-btn-no.status-btn-active { background: var(--fold); border-color: color-mix(in srgb, var(--fold) 60%, #fff); box-shadow: 0 10px 30px color-mix(in srgb, var(--fold) 42%, transparent); }
