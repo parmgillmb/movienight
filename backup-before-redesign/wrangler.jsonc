@@ -1,0 +1,19 @@
+{
+  "$schema": "https://developers.cloudflare.com/workers/wrangler/configuration-schema.json",
+  "name": "movienight",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-07-19",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "movie-night-db",
+      "database_id": "adb864b9-41dc-4e7a-a3b2-78fa57141393"
+    }
+  ]
+}
