@@ -434,6 +434,8 @@ function App() {
   const [state, setState] = useState<AppState>(defaultState)
   const [isEditingDetails, setIsEditingDetails] = useState(false)
   const [view, setView] = useState<'dashboard' | 'attendance' | 'log' | 'archive'>('dashboard')
+  // The Activity Log / Past Events entry panel at the bottom of the dashboard.
+  const [showArchives, setShowArchives] = useState(false)
   // Unlocked for the rest of the session once the PIN is entered.
   const [isUnlocked, setIsUnlocked] = useState(false)
   // Which action the PIN prompt is currently gating, if any.
@@ -1116,18 +1118,16 @@ function App() {
           </AnimatePresence>
         </motion.header>
 
-        <div className="mb-6 flex gap-2 rounded-2xl border border-white/10 bg-black/20 p-1.5 backdrop-blur">
+        <div className="tab-bar">
           {([
             ['dashboard', 'Dashboard'],
-            ['attendance', `Attendance${attendanceStats.expectedGuests ? ` (${attendanceStats.expectedGuests})` : ''}`],
-            ['log', `Activity Log${state.activityLog.length ? ` (${state.activityLog.length})` : ''}`],
-            ['archive', `Past Events${state.archives.length ? ` (${state.archives.length})` : ''}`],
+            ['attendance', `Attendance${attendanceStats.expectedGuests ? ` · ${attendanceStats.expectedGuests}` : ''}`],
           ] as const).map(([key, label]) => (
             <button
               key={key}
               type="button"
               onClick={() => setView(key)}
-              className={`tab-btn ${view === key ? 'tab-btn-active' : ''}`}
+              className={`tab-btn ${view === key || (key === 'dashboard' && (view === 'log' || view === 'archive')) ? 'tab-btn-active' : ''}`}
             >
               {label}
             </button>
@@ -1136,14 +1136,6 @@ function App() {
 
         {view === 'dashboard' ? (
         <section className="space-y-6">
-              <div className="vintage-banner banner-marquee">
-                <div className="banner-body">
-                  <p className="banner-kicker">Tonight at the Picture House</p>
-                  <p className="banner-title">The Feature Awaits</p>
-                  <p className="banner-sub">Cast your night, claim your seat, and call the film — the reels below run the show.</p>
-                </div>
-              </div>
-
               <section className="glass-card rounded-[22px] border border-white/10 p-6">
                 <SectionHead index="Reel 01 · The Vote" title="Best Night" />
                 <div className="mb-4">
@@ -1270,18 +1262,51 @@ function App() {
                   </button>
                 </Magnetic>
               </section>
+
+              {/* The archive drawer: hidden until opened, then reveals entries
+                  for the Activity Log and Past Events. */}
+              <FilmStripDivider label="The Vault" />
+              <section className="rounded-[22px] border border-white/10 bg-black/20 p-5">
+                <button
+                  type="button"
+                  onClick={() => setShowArchives((prev) => !prev)}
+                  className="flex w-full items-center justify-between gap-3 text-left"
+                  aria-expanded={showArchives}
+                >
+                  <div>
+                    <p className="label mb-1">The Vault</p>
+                    <p className="text-sm text-white/60">Activity log and past events — tucked away until you need them.</p>
+                  </div>
+                  <span className={`vault-chevron ${showArchives ? 'open' : ''}`} aria-hidden="true">▾</span>
+                </button>
+
+                <AnimatePresence initial={false}>
+                  {showArchives ? (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                        <button type="button" onClick={() => setView('log')} className="vault-entry">
+                          <span className="vault-entry-title font-display">Activity Log</span>
+                          <span className="vault-entry-meta">{state.activityLog.length} {state.activityLog.length === 1 ? 'entry' : 'entries'}</span>
+                        </button>
+                        <button type="button" onClick={() => setView('archive')} className="vault-entry">
+                          <span className="vault-entry-title font-display">Past Events</span>
+                          <span className="vault-entry-meta">{state.archives.length} archived</span>
+                        </button>
+                      </div>
+                    </motion.div>
+                  ) : null}
+                </AnimatePresence>
+              </section>
         </section>
         ) : null}
 
         {view === 'attendance' ? (
           <section className="space-y-6">
-              <div className="vintage-banner banner-reel">
-                <div className="banner-body">
-                  <p className="banner-kicker">Reel 05 · The Cast</p>
-                  <p className="banner-title">Roll Call</p>
-                  <p className="banner-sub">Deal yourself in: pick your nights, make the call, add your notes.</p>
-                </div>
-              </div>
               <section>
                 <SectionHead index="Reel 05 · The Cast" title="Attendance" />
                 <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
@@ -1503,7 +1528,9 @@ function App() {
         ) : null}
 
         {view === 'log' ? (
-          <section className="glass-card rounded-[22px] border border-white/10 p-6">
+          <section className="space-y-4">
+            <button type="button" onClick={() => setView('dashboard')} className="back-link">← Back to Dashboard</button>
+            <div className="glass-card rounded-[22px] border border-white/10 p-6">
             <SectionHead index="The Record · Live" title="Activity Log" />
             <p className="mb-4 text-sm text-white/55">Every call and every edit, newest first.</p>
             {state.activityLog.length === 0 ? (
@@ -1539,11 +1566,13 @@ function App() {
                 ))}
               </ul>
             )}
+            </div>
           </section>
         ) : null}
 
         {view === 'archive' ? (
           <section className="space-y-5">
+            <button type="button" onClick={() => setView('dashboard')} className="back-link">← Back to Dashboard</button>
             <div className="glass-card rounded-[22px] border border-white/10 p-6">
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div className="flex-1">

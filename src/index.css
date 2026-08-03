@@ -221,25 +221,69 @@ body::after {
 /* ============================================================
    Navigation (reel selector)
    ============================================================ */
+.tab-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
 .tab-btn {
   width: 100%;
-  border-radius: 100px;
-  padding: 0.62rem 1rem;
+  border-radius: 14px;
+  padding: 0.95rem 1rem;
   font-family: var(--mono);
-  font-size: 0.76rem;
-  letter-spacing: 0.14em;
+  font-size: 0.9rem;
+  letter-spacing: 0.16em;
   text-transform: uppercase;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--bone-dim);
-  transition: all 0.3s var(--ease);
+  /* clear, always-visible outline */
+  border: 1.5px solid color-mix(in srgb, var(--bone) 20%, transparent);
+  background: color-mix(in srgb, var(--void) 45%, transparent);
+  transition: all 0.25s var(--ease);
   position: relative;
 }
-.tab-btn:hover { color: var(--bone); background: color-mix(in srgb, var(--bone) 6%, transparent); }
+.tab-btn:hover {
+  color: var(--bone);
+  border-color: color-mix(in srgb, var(--gold) 55%, transparent);
+  background: color-mix(in srgb, var(--bone) 6%, transparent);
+}
 .tab-btn-active {
   color: var(--void);
+  border-color: var(--gold-hot);
   background: linear-gradient(120deg, var(--gold), var(--gold-hot));
-  box-shadow: 0 10px 30px color-mix(in srgb, var(--gold) 35%, transparent);
+  box-shadow: 0 12px 34px color-mix(in srgb, var(--gold) 38%, transparent);
 }
+
+/* The Vault disclosure (Activity Log / Past Events entry) */
+.vault-chevron {
+  color: var(--gold-hot); font-size: 1.2rem; line-height: 1;
+  transition: transform 0.3s var(--ease); flex-shrink: 0;
+}
+.vault-chevron.open { transform: rotate(180deg); }
+.vault-entry {
+  display: flex; flex-direction: column; gap: 0.3rem; text-align: left;
+  border-radius: 14px; border: 1px solid var(--edge);
+  background: color-mix(in srgb, var(--void) 40%, transparent);
+  padding: 1.1rem 1.2rem; cursor: pointer;
+  transition: border-color 0.25s var(--ease), transform 0.25s var(--ease), background-color 0.25s;
+}
+.vault-entry:hover {
+  border-color: color-mix(in srgb, var(--gold) 50%, transparent);
+  background: color-mix(in srgb, var(--gold) 8%, transparent);
+  transform: translateY(-2px);
+}
+.vault-entry-title { font-size: 1.3rem; text-transform: uppercase; letter-spacing: 0.01em; }
+.vault-entry-meta { font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--bone-dim); }
+
+/* back link on the log / archive views */
+.back-link {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-family: var(--mono); font-size: 0.74rem; letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--bone-dim); border: 1px solid var(--edge); border-radius: 100px;
+  padding: 0.5rem 1rem; cursor: pointer; transition: all 0.25s var(--ease);
+}
+.back-link:hover { color: var(--bone); border-color: color-mix(in srgb, var(--gold) 45%, transparent); }
 
 /* ============================================================
    Stat blocks / gauges
